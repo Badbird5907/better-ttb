@@ -14,7 +14,6 @@ import {
   Download,
   FileJson,
   Layers,
-  Paintbrush,
   Plus,
   Share2,
   Trash2,
@@ -29,6 +28,10 @@ import { AppNav, MobileNav } from "@/components/app-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WeekGrid } from "@/components/timetable/WeekGrid";
 import type { BlockedWindow } from "@/components/timetable/WeekGrid";
+import {
+  GeneratePanelBody,
+  candidateKey,
+} from "@/components/timetable/GeneratePanelContent";
 import { BUILDING_INDEX } from "@/lib/buildings";
 import { daysWithClasses, hasTightTransfer } from "@/lib/itinerary";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +58,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import {
   Sheet,
   SheetContent,
@@ -162,6 +172,7 @@ function TimetableRoute() {
   const generatorPrefs = activePlan.prefs.generator ?? createDefaultGeneratorPrefs();
   const [term, setTerm] = React.useState<Term>("fall");
   const [panelOpen, setPanelOpen] = React.useState(true);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [blockoutMode, setBlockoutMode] = React.useState(false);
   const [selectedCourseKey, setSelectedCourseKey] = React.useState<string | null>(null);
   const [shareOpen, setShareOpen] = React.useState(false);
@@ -228,6 +239,11 @@ function TimetableRoute() {
     () => blockedWindowsFromRules(generatorPrefs.rules),
     [generatorPrefs.rules],
   );
+  const sortedCandidates = React.useMemo(
+    () => sortCandidates(generationResult?.candidates ?? [], generatorPrefs.sort),
+    [generationResult?.candidates, generatorPrefs.sort],
+  );
+  const previewKey = previewCandidate ? candidateKey(previewCandidate) : null;
 
   function setGeneratorPrefs(updater: (prefs: GeneratorPrefs) => GeneratorPrefs) {
     updatePlanPrefs(activePlan.id, (prefs) => ({
@@ -247,6 +263,9 @@ function TimetableRoute() {
   function toggleBlockoutMode() {
     if (!blockoutMode) {
       setRules(ensureBlockedTimesRule(generatorPrefs.rules));
+      // Enabling paint mode from inside the mobile drawer would hide the grid;
+      // close the drawer so the user can immediately paint on the main grid.
+      setDrawerOpen(false);
     }
 
     setBlockoutMode((current) => !current);
@@ -531,6 +550,7 @@ function TimetableRoute() {
 
           {panelOpen ? (
             <GeneratePanel
+              className="hidden md:flex"
               activePlan={activePlan}
               courses={activeCourses}
               rules={generatorPrefs.rules}
@@ -540,15 +560,19 @@ function TimetableRoute() {
               workerError={workerError}
               result={generationResult}
               sort={generatorPrefs.sort}
+              sortedCandidates={sortedCandidates}
+              previewKey={previewKey}
               onClose={() => setPanelOpen(false)}
               onRun={runGenerator}
               onRulesChange={setRules}
               onToggleBlockout={toggleBlockoutMode}
               onPreviewCandidate={setPreviewCandidate}
+              onApplyPreview={applyPreview}
+              onDiscardPreview={() => setPreviewCandidate(null)}
               onSortChange={setSort}
             />
           ) : (
-            <aside className="flex items-start justify-center border-l bg-background p-2">
+            <aside className="hidden items-start justify-center border-l bg-background p-2 md:flex">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -566,6 +590,51 @@ function TimetableRoute() {
             </aside>
           )}
         </div>
+
+        <Button
+          type="button"
+          className="fixed right-4 bottom-20 z-40 shadow-lg md:hidden"
+          onClick={() => setDrawerOpen(true)}
+        >
+          <Wand2 />
+          Generate
+        </Button>
+
+        <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
+          <DrawerContent className="h-[85vh] md:hidden">
+            <DrawerHeader className="border-b text-left">
+              <DrawerTitle>Generate</DrawerTitle>
+              <DrawerDescription>Rules, locks, and candidates</DrawerDescription>
+            </DrawerHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <GeneratePanelBody
+                activePlan={activePlan}
+                courses={activeCourses}
+                rules={generatorPrefs.rules}
+                blockedWindows={blockedWindows}
+                blockoutMode={blockoutMode}
+                workerState={workerState}
+                workerError={workerError}
+                result={generationResult}
+                sort={generatorPrefs.sort}
+                sortedCandidates={sortedCandidates}
+                previewKey={previewKey}
+                renderLockedChoices={() => (
+                  <LockedChoicesHint activePlan={activePlan} courses={activeCourses} />
+                )}
+                renderRuleEditor={() => (
+                  <RuleEditor rules={generatorPrefs.rules} onRulesChange={setRules} />
+                )}
+                onRun={runGenerator}
+                onToggleBlockout={toggleBlockoutMode}
+                onPreviewCandidate={setPreviewCandidate}
+                onApplyPreview={applyPreview}
+                onDiscardPreview={() => setPreviewCandidate(null)}
+                onSortChange={setSort}
+              />
+            </div>
+          </DrawerContent>
+        </Drawer>
 
         <CourseDetailSheet
           course={selectedCourse}
@@ -704,6 +773,7 @@ function TimetableHeader({
 }
 
 function GeneratePanel({
+  className,
   activePlan,
   courses,
   rules,
@@ -713,13 +783,18 @@ function GeneratePanel({
   workerError,
   result,
   sort,
+  sortedCandidates,
+  previewKey,
   onClose,
   onRun,
   onRulesChange,
   onToggleBlockout,
   onPreviewCandidate,
+  onApplyPreview,
+  onDiscardPreview,
   onSortChange,
 }: {
+  className?: string;
   activePlan: Plan;
   courses: Course[];
   rules: RuleConfig[];
@@ -729,20 +804,19 @@ function GeneratePanel({
   workerError: string | null;
   result: GenerationResult | null;
   sort: GeneratorSortKey;
+  sortedCandidates: CandidateTimetable[];
+  previewKey: string | null;
   onClose: () => void;
   onRun: () => void;
   onRulesChange: (rules: RuleConfig[]) => void;
   onToggleBlockout: () => void;
   onPreviewCandidate: (candidate: CandidateTimetable) => void;
+  onApplyPreview: () => void;
+  onDiscardPreview: () => void;
   onSortChange: (sort: GeneratorSortKey) => void;
 }) {
-  const sortedCandidates = React.useMemo(
-    () => sortCandidates(result?.candidates ?? [], sort),
-    [result?.candidates, sort],
-  );
-
   return (
-    <aside className="min-h-0 overflow-y-auto border-l bg-background">
+    <aside className={cn("min-h-0 flex-col overflow-y-auto border-l bg-background", className)}>
       <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-background p-4">
         <div>
           <h2 className="text-sm font-semibold">Generate</h2>
@@ -754,85 +828,31 @@ function GeneratePanel({
         </Button>
       </div>
 
-      <div className="space-y-5 p-4">
-        <LockedChoicesHint activePlan={activePlan} courses={courses} />
-
-        <Separator />
-
-        <section className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h3 className="text-sm font-medium">Rules</h3>
-              <p className="text-xs text-muted-foreground">{rules.length} active</p>
-            </div>
-            <Button
-              type="button"
-              variant={blockoutMode ? "secondary" : "outline"}
-              size="sm"
-              onClick={onToggleBlockout}
-            >
-              <Paintbrush />
-              Block out
-            </Button>
-          </div>
-          {blockoutMode && (
-            <p className="rounded-md border border-amber-500/30 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
-              Paint 30-minute cells on the grid. {blockedWindows.length} blocked windows are active.
-            </p>
-          )}
+      <GeneratePanelBody
+        activePlan={activePlan}
+        courses={courses}
+        rules={rules}
+        blockedWindows={blockedWindows}
+        blockoutMode={blockoutMode}
+        workerState={workerState}
+        workerError={workerError}
+        result={result}
+        sort={sort}
+        sortedCandidates={sortedCandidates}
+        previewKey={previewKey}
+        renderLockedChoices={() => (
+          <LockedChoicesHint activePlan={activePlan} courses={courses} />
+        )}
+        renderRuleEditor={() => (
           <RuleEditor rules={rules} onRulesChange={onRulesChange} />
-        </section>
-
-        <Separator />
-
-        <section className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <Button type="button" className="w-full" onClick={onRun} disabled={workerState === "running"}>
-              <Wand2 />
-              {workerState === "running" ? "Generating" : "Run generator"}
-            </Button>
-          </div>
-          {workerError && <p className="text-sm text-destructive">{workerError}</p>}
-          {result?.infeasible && (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
-              <p className="font-medium">No feasible timetable</p>
-              <p className="mt-1 text-muted-foreground">{result.infeasible.reason}</p>
-              {result.infeasible.conflictingCourses && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Check {result.infeasible.conflictingCourses.join(", ")}.
-                </p>
-              )}
-            </div>
-          )}
-          {result && result.candidates.length > 0 && (
-            <>
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">{result.candidates.length} candidates</p>
-                <Select value={sort} onValueChange={(value) => onSortChange(value as GeneratorSortKey)}>
-                  <SelectTrigger size="sm" className="w-[150px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="score">Score</SelectItem>
-                    <SelectItem value="walking">Walking</SelectItem>
-                    <SelectItem value="earliest-start">Earliest start</SelectItem>
-                    <SelectItem value="days-on-campus">Days on campus</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <ResultsGallery
-                plan={activePlan}
-                courses={courses}
-                candidates={sortedCandidates}
-                onPreviewCandidate={onPreviewCandidate}
-              />
-              <p className="text-xs text-muted-foreground">
-                Enumerated {result.stats.enumerated.toLocaleString()} combinations · {result.stats.exhaustive ? "exhaustive" : "budget capped"}
-              </p>
-            </>
-          )}
-        </section>
-      </div>
+        )}
+        onRun={onRun}
+        onToggleBlockout={onToggleBlockout}
+        onPreviewCandidate={onPreviewCandidate}
+        onApplyPreview={onApplyPreview}
+        onDiscardPreview={onDiscardPreview}
+        onSortChange={onSortChange}
+      />
     </aside>
   );
 }
@@ -1257,73 +1277,6 @@ function LabeledSelect({
           ))}
         </SelectContent>
       </Select>
-    </div>
-  );
-}
-
-function ResultsGallery({
-  plan,
-  courses,
-  candidates,
-  onPreviewCandidate,
-}: {
-  plan: Plan;
-  courses: Course[];
-  candidates: CandidateTimetable[];
-  onPreviewCandidate: (candidate: CandidateTimetable) => void;
-}) {
-  const coursesByKey = React.useMemo(
-    () => new Map(courses.map((course) => [courseKey(course), course])),
-    [courses],
-  );
-
-  return (
-    <div className="flex gap-3 overflow-x-auto pb-2">
-      {candidates.map((candidate, index) => {
-        const selected = selectedSectionsFromCandidate(plan, coursesByKey, candidate);
-        const fall = buildTermBlocks(selected, "fall", { preview: true });
-        const winter = buildTermBlocks(selected, "winter", { preview: true });
-
-        return (
-          <div
-            key={candidate.selections.map((selection) => `${selection.courseCode}:${selection.teachMethod}:${selection.sectionName}`).join("|")}
-            role="button"
-            tabIndex={0}
-            className="w-[310px] shrink-0 cursor-pointer rounded-md border bg-background p-3 text-left shadow-xs outline-none transition-colors hover:bg-muted/30 focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            onClick={() => onPreviewCandidate(candidate)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                onPreviewCandidate(candidate);
-              }
-            }}
-          >
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-sm font-medium">Candidate {index + 1}</span>
-              <Badge>{candidate.score.toFixed(1)}</Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <p className="mb-1 text-[10px] font-medium text-muted-foreground">Fall</p>
-                <WeekGrid blocks={fall.blocks} compact />
-              </div>
-              <div>
-                <p className="mb-1 text-[10px] font-medium text-muted-foreground">Winter</p>
-                <WeekGrid blocks={winter.blocks} compact />
-              </div>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1">
-              <Badge variant="outline">{Math.round(totalWalkMinutes(candidate))} walk min</Badge>
-              <Badge variant="outline">{daysOnCampusCount(candidate)} campus days</Badge>
-              {candidate.metrics.slice(0, 2).map((metric) => (
-                <Badge key={metric.ruleId} variant="secondary" className="max-w-full truncate">
-                  {metric.detail}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }

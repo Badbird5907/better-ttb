@@ -54,8 +54,10 @@ export function WeekGrid({
   );
   const rowHeight = compact ? 18 : 56;
   const height = ((endMillis - startMillis) / HOUR_MILLIS) * rowHeight;
+  // Compact thumbnails must never overflow their card: use zero-min fluid columns
+  // (no fixed time axis) so every weekday fits within the available width.
   const gridTemplateColumns = compact
-    ? `28px repeat(${days.length}, minmax(34px, 1fr))`
+    ? `repeat(${days.length}, minmax(0, 1fr))`
     : `56px repeat(${days.length}, minmax(128px, 1fr))`;
   // Non-compact grids can be wider than a phone; allow horizontal scrolling with
   // a sensible minimum so day columns keep a usable width instead of collapsing.
@@ -104,41 +106,37 @@ export function WeekGrid({
         className="grid border-b bg-muted/50"
         style={{ gridTemplateColumns }}
       >
-        <div className={cn(!compact && "sticky left-0 z-40 bg-muted/50")} />
+        {!compact && <div className="sticky left-0 z-40 bg-muted/50" />}
         {days.map((day) => (
           <div
             key={day}
             className={cn(
               "border-l px-2 py-2 text-center text-xs font-medium",
-              compact && "px-1 py-1 text-[8px]",
+              compact && "border-l-0 px-0 py-0.5 text-[7px] leading-none",
             )}
           >
-            {formatDay(day)}
+            {compact ? formatDay(day).charAt(0) : formatDay(day)}
           </div>
         ))}
       </div>
 
-      <div className="grid" style={{ gridTemplateColumns }}>
-        <div
-          className={cn(
-            "relative bg-muted/20",
-            !compact && "sticky left-0 z-40",
-          )}
-          style={{ height }}
-        >
-          {hours.map((hour) => (
-            <div
-              key={hour}
-              className={cn(
-                "absolute right-1 -translate-y-2 text-[10px] text-muted-foreground",
-                compact && "right-0 text-[7px]",
-              )}
-              style={{ top: percent(hour, startMillis, endMillis) }}
-            >
-              {millisofdayToHHMM(hour)}
-            </div>
-          ))}
-        </div>
+      <div
+        className="grid"
+        style={{ gridTemplateColumns, gridTemplateRows: `${height}px` }}
+      >
+        {!compact && (
+          <div className="relative sticky left-0 z-40 bg-muted/20" style={{ height }}>
+            {hours.map((hour) => (
+              <div
+                key={hour}
+                className="absolute right-1 -translate-y-2 text-[10px] text-muted-foreground"
+                style={{ top: percent(hour, startMillis, endMillis) }}
+              >
+                {millisofdayToHHMM(hour)}
+              </div>
+            ))}
+          </div>
+        )}
 
         {days.map((day) => {
           const dayBlocks = laidOutBlocks.filter((block) => block.day === day);
