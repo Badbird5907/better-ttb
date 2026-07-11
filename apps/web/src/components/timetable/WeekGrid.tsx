@@ -26,10 +26,10 @@ interface LaidOutBlock extends TimetableBlock {
   laneCount: number;
 }
 
-const DEFAULT_START = hoursToMillis(8);
-const DEFAULT_END = hoursToMillis(22);
 const CELL_MILLIS = 30 * 60 * 1000;
 const HOUR_MILLIS = 60 * 60 * 1000;
+const DEFAULT_START = hoursToMillis(8);
+const DEFAULT_END = hoursToMillis(22);
 const DAY_NUMBERS = [1, 2, 3, 4, 5, 6, 7] as const;
 
 export function WeekGrid({
