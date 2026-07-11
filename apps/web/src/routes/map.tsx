@@ -1,9 +1,10 @@
-import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { Course, DayNumber } from "@better-ttb/shared";
 import { formatDay, millisofdayToHHMM } from "@better-ttb/shared";
-import { CalendarDays, Footprints, Layers, MapIcon, MapPin, TriangleAlert } from "lucide-react";
+import { Footprints, Layers, MapPin, TriangleAlert } from "lucide-react";
 import * as React from "react";
 
+import { AppNav, MobileNav } from "@/components/app-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -130,7 +131,7 @@ function MapRoute() {
         </Tabs>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(240px,1fr)_auto] border-t md:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] md:grid-rows-1">
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(240px,1fr)_auto] border-t pb-16 md:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] md:grid-rows-1 md:pb-0">
         <section className="relative min-h-0">
           <MapCanvas itinerary={itinerary} />
           {itinerary.unknownLocations.length > 0 && (
@@ -147,6 +148,8 @@ function MapRoute() {
 
         <WalkPanel itinerary={itinerary} />
       </div>
+
+      <MobileNav />
     </main>
   );
 }
@@ -270,39 +273,14 @@ function MapHeader() {
           </div>
           <div className="min-w-0">
             <h1 className="truncate text-base font-semibold">better-ttb</h1>
-            <p className="truncate text-xs text-muted-foreground">Map</p>
+            <p className="hidden truncate text-xs text-muted-foreground sm:block">Map</p>
           </div>
         </div>
 
-        <nav className="hidden items-center rounded-md bg-muted p-1 md:flex">
-          <NavTab to="/" label="Build" />
-          <NavTab to="/timetable" label="Timetable" icon={<CalendarDays className="size-3.5" />} />
-          <NavTab to="/map" label="Map" icon={<MapIcon className="size-3.5" />} />
-        </nav>
+        <AppNav />
       </div>
       <ThemeToggle />
     </header>
   );
 }
 
-function NavTab({
-  to,
-  label,
-  icon,
-}: {
-  to: "/" | "/timetable" | "/map";
-  label: string;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <Link
-      to={to}
-      activeOptions={{ exact: to === "/" }}
-      activeProps={{ className: "bg-background text-foreground shadow-xs" }}
-      className="inline-flex h-8 items-center gap-1.5 rounded-sm px-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-    >
-      {icon}
-      {label}
-    </Link>
-  );
-}

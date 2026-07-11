@@ -13,7 +13,6 @@ export type GeneratorSortKey = "score" | "walking" | "earliest-start" | "days-on
 export interface GeneratorPrefs {
   version: 1;
   rules: RuleConfig[];
-  lockedCourseKeys: string[];
   sort: GeneratorSortKey;
 }
 
@@ -186,7 +185,6 @@ export function createDefaultGeneratorPrefs(): GeneratorPrefs {
   return {
     version: 1,
     rules: cloneRules(DEFAULT_RULES),
-    lockedCourseKeys: [],
     sort: "score",
   };
 }
@@ -452,15 +450,13 @@ function normalizeGeneratorPrefs(value: unknown): GeneratorPrefs {
   const rules = Array.isArray(value.rules)
     ? value.rules.filter(isRuleConfig)
     : createDefaultGeneratorPrefs().rules;
-  const lockedCourseKeys = Array.isArray(value.lockedCourseKeys)
-    ? value.lockedCourseKeys.filter((entry): entry is string => typeof entry === "string")
-    : [];
   const sort = isGeneratorSortKey(value.sort) ? value.sort : "score";
 
+  // Old persisted prefs may carry a lockedCourseKeys field; it is intentionally
+  // read-and-drop here so stale data doesn't leak into the current shape.
   return {
     version: 1,
     rules: rules.length > 0 ? cloneRules(rules) : createDefaultGeneratorPrefs().rules,
-    lockedCourseKeys,
     sort,
   };
 }

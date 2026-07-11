@@ -1,4 +1,4 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { detectConflicts } from "@better-ttb/generator";
 import type {
   Course,
@@ -20,7 +20,7 @@ import {
   Copy,
   Filter,
   Layers,
-  MapIcon,
+  MoreHorizontal,
   Pencil,
   Pin,
   PinOff,
@@ -33,6 +33,7 @@ import {
 import * as React from "react";
 
 import buildings from "@/data/buildings.json";
+import { AppNav, MobileNav } from "@/components/app-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   DAY_FILTERS,
@@ -451,7 +452,7 @@ function Home() {
         {status === "empty" ? (
           <CatalogEmptyState />
         ) : (
-          <div className="grid min-h-0 flex-1 grid-cols-1 border-t lg:grid-cols-[minmax(440px,1fr)_420px] xl:grid-cols-[minmax(560px,1fr)_460px]">
+          <div className="grid min-h-0 flex-1 grid-cols-1 border-t pb-16 md:pb-0 lg:grid-cols-[minmax(440px,1fr)_420px] xl:grid-cols-[minmax(560px,1fr)_460px]">
             <section
               className={cn(
                 "min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r bg-muted/20 lg:grid",
@@ -525,6 +526,8 @@ function Home() {
           onUnpin={(course) => unpinCourse(course.code, course.sectionCode)}
           onRefresh={refreshSeats}
         />
+
+        <MobileNav />
       </main>
     </TooltipProvider>
   );
@@ -560,17 +563,13 @@ function BuilderHeader({
           </div>
           <div className="min-w-0">
             <h1 className="truncate text-base font-semibold">better-ttb</h1>
-            <p className="truncate text-xs text-muted-foreground">
+            <p className="hidden truncate text-xs text-muted-foreground sm:block">
               UofT Arts & Science timetable builder
             </p>
           </div>
         </div>
 
-        <nav className="hidden items-center rounded-md bg-muted p-1 md:flex">
-          <NavTab to="/" label="Build" exact />
-          <NavTab to="/timetable" label="Timetable" />
-          <NavTab to="/map" label="Map" icon={<MapIcon className="size-3.5" />} />
-        </nav>
+        <AppNav />
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
@@ -591,7 +590,7 @@ function BuilderHeader({
         </Select>
 
         <Select value={activePlan.id} onValueChange={onSetActivePlan}>
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-[110px] min-w-0 sm:w-[160px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -603,7 +602,11 @@ function BuilderHeader({
           </SelectContent>
         </Select>
 
-        <HeaderIconButton label="New plan" onClick={onNewPlan}>
+        <HeaderIconButton
+          label="New plan"
+          onClick={onNewPlan}
+          className="hidden sm:inline-flex"
+        >
           <Plus />
         </HeaderIconButton>
         <HeaderIconButton
@@ -624,9 +627,70 @@ function BuilderHeader({
           label="Delete plan"
           onClick={onDeletePlan}
           disabled={plans.length <= 1}
+          className="hidden sm:inline-flex"
         >
           <Trash2 />
         </HeaderIconButton>
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="sm:hidden"
+            >
+              <MoreHorizontal />
+              <span className="sr-only">Plan actions</span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-48 p-1.5">
+            <div className="space-y-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={onNewPlan}
+              >
+                <Plus />
+                New plan
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={onRenamePlan}
+              >
+                <Pencil />
+                Rename plan
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={onDuplicatePlan}
+              >
+                <Copy />
+                Duplicate plan
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={onDeletePlan}
+                disabled={plans.length <= 1}
+              >
+                <Trash2 />
+                Delete plan
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+
         <ThemeToggle />
       </div>
     </header>
@@ -648,30 +712,6 @@ function HeaderIconButton({
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
-  );
-}
-
-function NavTab({
-  to,
-  label,
-  icon,
-  exact = false,
-}: {
-  to: "/" | "/timetable" | "/map";
-  label: string;
-  icon?: React.ReactNode;
-  exact?: boolean;
-}) {
-  return (
-    <Link
-      to={to}
-      activeOptions={{ exact }}
-      activeProps={{ className: "bg-background text-foreground shadow-xs" }}
-      className="inline-flex h-8 items-center gap-1.5 rounded-sm px-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-    >
-      {icon}
-      {label}
-    </Link>
   );
 }
 
@@ -1317,7 +1357,7 @@ function PinnedCourseCard({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="max-w-[380px]">
-                          <SelectItem value={NO_SELECTION}>No section selected</SelectItem>
+                          <SelectItem value={NO_SELECTION}>Auto — let generator choose</SelectItem>
                           {course.sections
                             .filter((section) => section.teachMethod === teachMethod)
                             .map((section) => (
@@ -1371,8 +1411,8 @@ function CourseDetailSheet({
         {course && (
           <>
             <SheetHeader className="border-b p-5">
-              <div className="flex items-start justify-between gap-4 pr-8">
-                <div className="min-w-0 space-y-2">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <div className="min-w-0 space-y-2 pr-8 sm:pr-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <SheetTitle className="text-xl">{course.code}</SheetTitle>
                     <SectionBadge sectionCode={course.sectionCode} />
@@ -1385,11 +1425,12 @@ function CourseDetailSheet({
                     {course.department.name}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
+                    className="flex-1 sm:flex-none"
                     onClick={() => onRefresh(course)}
                     disabled={refreshing}
                   >
@@ -1400,6 +1441,7 @@ function CourseDetailSheet({
                     type="button"
                     variant={pinned ? "secondary" : "default"}
                     size="sm"
+                    className="flex-1 sm:flex-none"
                     onClick={() => (pinned ? onUnpin(course) : onPin(course))}
                   >
                     {pinned ? <PinOff /> : <Pin />}

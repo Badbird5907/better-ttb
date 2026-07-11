@@ -8,27 +8,24 @@ import type {
 import type { Course, DayNumber, DeliveryMode } from "@better-ttb/shared";
 import { formatSessionLabel, millisofdayToHHMM } from "@better-ttb/shared";
 import {
-  CalendarDays,
   Check,
   ChevronRight,
   Copy,
   Download,
   FileJson,
   Layers,
-  Lock,
-  MapIcon,
   Paintbrush,
   Plus,
   Share2,
   Trash2,
   TriangleAlert,
-  Unlock,
   Upload,
   Wand2,
   X,
 } from "lucide-react";
 import * as React from "react";
 
+import { AppNav, MobileNav } from "@/components/app-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WeekGrid } from "@/components/timetable/WeekGrid";
 import type { BlockedWindow } from "@/components/timetable/WeekGrid";
@@ -247,23 +244,6 @@ function TimetableRoute() {
     setGeneratorPrefs((prefs) => ({ ...prefs, sort }));
   }
 
-  function toggleLockedCourse(courseKeyValue: string) {
-    setGeneratorPrefs((prefs) => {
-      const locked = new Set(prefs.lockedCourseKeys);
-
-      if (locked.has(courseKeyValue)) {
-        locked.delete(courseKeyValue);
-      } else {
-        locked.add(courseKeyValue);
-      }
-
-      return {
-        ...prefs,
-        lockedCourseKeys: [...locked].sort(),
-      };
-    });
-  }
-
   function toggleBlockoutMode() {
     if (!blockoutMode) {
       setRules(ensureBlockedTimesRule(generatorPrefs.rules));
@@ -277,11 +257,7 @@ function TimetableRoute() {
   }
 
   function runGenerator() {
-    const courses = buildGeneratorCourseInputs(
-      activePlan,
-      coursesByKey,
-      generatorPrefs.lockedCourseKeys,
-    );
+    const courses = buildGeneratorCourseInputs(activePlan, coursesByKey);
 
     if (courses.length === 0) {
       setWorkerState("error");
@@ -454,7 +430,7 @@ function TimetableRoute() {
         />
 
         <div
-          className="grid min-h-0 flex-1 grid-cols-1 border-t lg:grid-cols-[var(--tt-cols)]"
+          className="grid min-h-0 flex-1 grid-cols-1 border-t pb-16 md:pb-0 lg:grid-cols-[var(--tt-cols)]"
           style={
             {
               "--tt-cols": panelOpen
@@ -557,7 +533,6 @@ function TimetableRoute() {
             <GeneratePanel
               activePlan={activePlan}
               courses={activeCourses}
-              prefs={generatorPrefs}
               rules={generatorPrefs.rules}
               blockedWindows={blockedWindows}
               blockoutMode={blockoutMode}
@@ -569,7 +544,6 @@ function TimetableRoute() {
               onRun={runGenerator}
               onRulesChange={setRules}
               onToggleBlockout={toggleBlockoutMode}
-              onToggleLockedCourse={toggleLockedCourse}
               onPreviewCandidate={setPreviewCandidate}
               onSortChange={setSort}
             />
@@ -628,6 +602,8 @@ function TimetableRoute() {
             <DialogFooter showCloseButton />
           </DialogContent>
         </Dialog>
+
+        <MobileNav />
       </main>
     </TooltipProvider>
   );
@@ -663,20 +639,16 @@ function TimetableHeader({
           </div>
           <div className="min-w-0">
             <h1 className="truncate text-base font-semibold">better-ttb</h1>
-            <p className="truncate text-xs text-muted-foreground">Timetable</p>
+            <p className="hidden truncate text-xs text-muted-foreground sm:block">Timetable</p>
           </div>
         </div>
 
-        <nav className="hidden items-center rounded-md bg-muted p-1 md:flex">
-          <NavTab to="/" label="Build" />
-          <NavTab to="/timetable" label="Timetable" icon={<CalendarDays className="size-3.5" />} />
-          <NavTab to="/map" label="Map" icon={<MapIcon className="size-3.5" />} />
-        </nav>
+        <AppNav />
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
         <Select value={activePlan.id} onValueChange={onSetActivePlan}>
-          <SelectTrigger className="w-[170px]">
+          <SelectTrigger className="w-[110px] min-w-0 sm:w-[170px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -709,17 +681,21 @@ function TimetableHeader({
                 <Upload />
                 Import JSON
               </Button>
+              <Button type="button" variant="ghost" size="sm" className="w-full justify-start sm:hidden" onClick={onExportIcs}>
+                <Download />
+                Export ICS
+              </Button>
             </div>
           </PopoverContent>
         </Popover>
 
-        <Button type="button" variant="outline" size="sm" onClick={onExportIcs}>
+        <Button type="button" variant="outline" size="sm" className="hidden sm:inline-flex" onClick={onExportIcs}>
           <Download />
           ICS
         </Button>
         <Button type="button" size="sm" onClick={onShare} disabled={sharing}>
           <Share2 />
-          Share
+          <span className="hidden sm:inline">Share</span>
         </Button>
         <ThemeToggle />
       </div>
@@ -727,32 +703,9 @@ function TimetableHeader({
   );
 }
 
-function NavTab({
-  to,
-  label,
-  icon,
-}: {
-  to: "/" | "/timetable" | "/map";
-  label: string;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <Link
-      to={to}
-      activeOptions={{ exact: to === "/" }}
-      activeProps={{ className: "bg-background text-foreground shadow-xs" }}
-      className="inline-flex h-8 items-center gap-1.5 rounded-sm px-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-    >
-      {icon}
-      {label}
-    </Link>
-  );
-}
-
 function GeneratePanel({
   activePlan,
   courses,
-  prefs,
   rules,
   blockedWindows,
   blockoutMode,
@@ -764,13 +717,11 @@ function GeneratePanel({
   onRun,
   onRulesChange,
   onToggleBlockout,
-  onToggleLockedCourse,
   onPreviewCandidate,
   onSortChange,
 }: {
   activePlan: Plan;
   courses: Course[];
-  prefs: GeneratorPrefs;
   rules: RuleConfig[];
   blockedWindows: BlockedWindow[];
   blockoutMode: boolean;
@@ -782,7 +733,6 @@ function GeneratePanel({
   onRun: () => void;
   onRulesChange: (rules: RuleConfig[]) => void;
   onToggleBlockout: () => void;
-  onToggleLockedCourse: (courseKey: string) => void;
   onPreviewCandidate: (candidate: CandidateTimetable) => void;
   onSortChange: (sort: GeneratorSortKey) => void;
 }) {
@@ -805,40 +755,7 @@ function GeneratePanel({
       </div>
 
       <div className="space-y-5 p-4">
-        <section className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-medium">Locked choices</h3>
-            <Badge variant="outline">{prefs.lockedCourseKeys.length}</Badge>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {courses.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Pin courses in Build first.</p>
-            ) : (
-              courses.map((course) => {
-                const key = courseKey(course);
-                const locked = prefs.lockedCourseKeys.includes(key);
-                const pinned = activePlan.pinned.find((entry) => pinnedKey(entry) === key);
-                const hasChoice = pinned
-                  ? Object.values(pinned.chosen).some((choice) => Boolean(choice))
-                  : false;
-
-                return (
-                  <Button
-                    key={key}
-                    type="button"
-                    variant={locked ? "secondary" : "outline"}
-                    size="xs"
-                    onClick={() => onToggleLockedCourse(key)}
-                    disabled={!hasChoice}
-                  >
-                    {locked ? <Lock /> : <Unlock />}
-                    {course.code}
-                  </Button>
-                );
-              })
-            )}
-          </div>
-        </section>
+        <LockedChoicesHint activePlan={activePlan} courses={courses} />
 
         <Separator />
 
@@ -917,6 +834,61 @@ function GeneratePanel({
         </section>
       </div>
     </aside>
+  );
+}
+
+// Chosen sections are auto-locked by the generator now, so this is a read-only
+// summary of what will stay fixed rather than an interactive lock toggle.
+function LockedChoicesHint({
+  activePlan,
+  courses,
+}: {
+  activePlan: Plan;
+  courses: Course[];
+}) {
+  const lockedCourses = courses.flatMap((course) => {
+    const key = courseKey(course);
+    const pinned = activePlan.pinned.find((entry) => pinnedKey(entry) === key);
+
+    if (!pinned) {
+      return [];
+    }
+
+    const choices = Object.entries(pinned.chosen)
+      .filter((entry): entry is [string, string] =>
+        typeof entry[1] === "string" && entry[1].length > 0,
+      )
+      .map(([teachMethod, sectionName]) => `${teachMethod} ${sectionName}`);
+
+    if (choices.length === 0) {
+      return [];
+    }
+
+    return [{ code: course.code, key, choices }];
+  });
+
+  return (
+    <section className="space-y-2">
+      <h3 className="text-sm font-medium">Locked choices</h3>
+      <p className="text-xs text-muted-foreground">
+        Sections you&apos;ve picked in your plan are kept fixed. Clear a section
+        choice (set it to Auto) to let the generator optimize it.
+      </p>
+      {lockedCourses.length > 0 && (
+        <ul className="space-y-1.5">
+          {lockedCourses.map((entry) => (
+            <li key={entry.key} className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="font-medium">{entry.code}</span>
+              {entry.choices.map((choice) => (
+                <Badge key={choice} variant="secondary" className="font-normal">
+                  {choice}
+                </Badge>
+              ))}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

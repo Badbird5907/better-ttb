@@ -1,8 +1,9 @@
-import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { Course } from "@better-ttb/shared";
-import { CalendarDays, Import, Layers, MapIcon } from "lucide-react";
+import { Import, Layers } from "lucide-react";
 import * as React from "react";
 
+import { AppNav, MobileNav } from "@/components/app-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WeekGrid } from "@/components/timetable/WeekGrid";
 import { Badge } from "@/components/ui/badge";
@@ -121,11 +122,7 @@ function SharedPlanRoute() {
               <p className="truncate text-xs text-muted-foreground">Shared plan</p>
             </div>
           </div>
-          <nav className="hidden items-center rounded-md bg-muted p-1 md:flex">
-            <NavTab to="/" label="Build" />
-            <NavTab to="/timetable" label="Timetable" icon={<CalendarDays className="size-3.5" />} />
-            <NavTab to="/map" label="Map" icon={<MapIcon className="size-3.5" />} />
-          </nav>
+          <AppNav />
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
@@ -136,7 +133,7 @@ function SharedPlanRoute() {
         </div>
       </header>
 
-      <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 p-4">
+      <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 p-4 pb-16 md:pb-4">
         {loading && <p className="text-sm text-muted-foreground">Loading shared plan.</p>}
         {error && <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
         {plan && (
@@ -199,28 +196,9 @@ function SharedPlanRoute() {
           </>
         )}
       </section>
+
+      <MobileNav />
     </main>
   );
 }
 
-function NavTab({
-  to,
-  label,
-  icon,
-}: {
-  to: "/" | "/timetable" | "/map";
-  label: string;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <Link
-      to={to}
-      activeOptions={{ exact: to === "/" }}
-      activeProps={{ className: "bg-background text-foreground shadow-xs" }}
-      className="inline-flex h-8 items-center gap-1.5 rounded-sm px-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-    >
-      {icon}
-      {label}
-    </Link>
-  );
-}

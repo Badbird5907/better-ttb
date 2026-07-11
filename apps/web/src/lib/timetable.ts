@@ -255,10 +255,7 @@ export function computeCreditTotals(
 export function buildGeneratorCourseInputs(
   plan: Plan,
   coursesByKey: Map<string, Course>,
-  lockedCourseKeys: readonly string[],
 ): CourseInput[] {
-  const locked = new Set(lockedCourseKeys);
-
   return plan.pinned.flatMap((pinned) => {
     const course = coursesByKey.get(pinnedKey(pinned));
 
@@ -268,16 +265,16 @@ export function buildGeneratorCourseInputs(
 
     const input: CourseInput = { course };
 
-    if (locked.has(pinnedKey(pinned))) {
-      const lockedChoices = Object.fromEntries(
-        Object.entries(pinned.chosen).filter((entry): entry is [TeachMethod, string] =>
-          typeof entry[1] === "string" && entry[1].length > 0,
-        ),
-      );
+    // Any section the user explicitly chose is locked automatically; clearing a
+    // choice (setting it to Auto) removes it here and lets the generator optimize.
+    const lockedChoices = Object.fromEntries(
+      Object.entries(pinned.chosen).filter((entry): entry is [TeachMethod, string] =>
+        typeof entry[1] === "string" && entry[1].length > 0,
+      ),
+    );
 
-      if (Object.keys(lockedChoices).length > 0) {
-        input.locked = lockedChoices;
-      }
+    if (Object.keys(lockedChoices).length > 0) {
+      input.locked = lockedChoices;
     }
 
     return [input];
