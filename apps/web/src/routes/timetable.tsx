@@ -21,6 +21,7 @@ import {
   Plus,
   Share2,
   Trash2,
+  TriangleAlert,
   Unlock,
   Upload,
   Wand2,
@@ -30,6 +31,8 @@ import * as React from "react";
 
 import { WeekGrid } from "@/components/timetable/WeekGrid";
 import type { BlockedWindow } from "@/components/timetable/WeekGrid";
+import { BUILDING_INDEX } from "@/lib/buildings";
+import { daysWithClasses, hasTightTransfer } from "@/lib/itinerary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -99,6 +102,7 @@ import {
   selectedSectionsFromCandidate,
   selectedSectionsFromPlan,
   totalWalkMinutes,
+  type SelectedTimetableSection,
   type Term,
 } from "@/lib/timetable";
 import { cn } from "@/lib/utils";
@@ -215,6 +219,10 @@ function TimetableRoute() {
   );
   const hasConflicts = TERMS.some((entry) =>
     termData[entry].blocks.some((block) => block.conflict),
+  );
+  const tightTransferLink = React.useMemo(
+    () => findTightTransferLink(visibleSelections),
+    [visibleSelections],
   );
   const selectedCourse = selectedCourseKey ? coursesByKey.get(selectedCourseKey) ?? null : null;
   const blockedWindows = React.useMemo(
@@ -460,18 +468,28 @@ function TimetableRoute() {
                     {activeCourses.length} pinned courses · {visibleSelections.length} scheduled sections
                   </p>
                 </div>
-                <Tabs value={term} onValueChange={(value) => setTerm(value as Term)}>
-                  <TabsList>
-                    <TabsTrigger value="fall">
-                      Fall
-                      <Badge variant="secondary">{creditTotals.fall.toFixed(1)}</Badge>
-                    </TabsTrigger>
-                    <TabsTrigger value="winter">
-                      Winter
-                      <Badge variant="secondary">{creditTotals.winter.toFixed(1)}</Badge>
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
+                <div className="flex items-center gap-2">
+                  {tightTransferLink && (
+                    <Button asChild type="button" size="sm" variant="outline" className="border-destructive/50 text-destructive hover:text-destructive">
+                      <Link to="/map" search={tightTransferLink}>
+                        <TriangleAlert />
+                        Tight walk
+                      </Link>
+                    </Button>
+                  )}
+                  <Tabs value={term} onValueChange={(value) => setTerm(value as Term)}>
+                    <TabsList>
+                      <TabsTrigger value="fall">
+                        Fall
+                        <Badge variant="secondary">{creditTotals.fall.toFixed(1)}</Badge>
+                      </TabsTrigger>
+                      <TabsTrigger value="winter">
+                        Winter
+                        <Badge variant="secondary">{creditTotals.winter.toFixed(1)}</Badge>
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
               </div>
 
               {shareError && (
@@ -1463,6 +1481,22 @@ function sortCandidates(
         return right.score - left.score;
     }
   });
+}
+
+function findTightTransferLink(
+  selectedSections: SelectedTimetableSection[],
+): { term: Term; day: DayNumber } | null {
+  for (const term of TERMS) {
+    if (!hasTightTransfer(selectedSections, BUILDING_INDEX, term)) {
+      continue;
+    }
+
+    const days = daysWithClasses(selectedSections, BUILDING_INDEX, term);
+
+    return { term, day: days[0] ?? 1 };
+  }
+
+  return null;
 }
 
 function buildTimeOptions(startHour: number, endHour: number): Array<{ value: number; label: string }> {

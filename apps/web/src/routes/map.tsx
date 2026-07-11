@@ -1,50 +1,298 @@
-import type { ReactNode } from "react";
-import { Link, createFileRoute } from "@tanstack/react-router";
-import { Layers, MapIcon } from "lucide-react";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import type { Course, DayNumber } from "@better-ttb/shared";
+import { formatDay, millisofdayToHHMM } from "@better-ttb/shared";
+import { CalendarDays, Footprints, Layers, MapIcon, MapPin, TriangleAlert } from "lucide-react";
+import * as React from "react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BUILDING_INDEX } from "@/lib/buildings";
+import {
+  buildDayItinerary,
+  daysWithClasses,
+  type DayItinerary,
+  type ItineraryTransfer,
+} from "@/lib/itinerary";
+import { courseKey, selectedSectionsFromPlan, type Term } from "@/lib/timetable";
+import { cn } from "@/lib/utils";
+import { useCatalogStore } from "@/stores/catalog";
+import { activePlanFromState, usePlanStore } from "@/stores/plan";
+
+const TERMS: Term[] = ["fall", "winter"];
+const SCHOOL_DAYS: DayNumber[] = [1, 2, 3, 4, 5];
+
+// leaflet is heavy and browser-only: lazy import keeps it in the /map chunk and
+// off the server-render path.
+const CampusMap = React.lazy(() =>
+  import("@/components/map/CampusMap").then((module) => ({ default: module.CampusMap })),
+);
+
+export interface MapSearch {
+  term: Term;
+  day: DayNumber;
+}
 
 export const Route = createFileRoute("/map")({
-  component: MapStub,
+  validateSearch: (search: Record<string, unknown>): MapSearch => ({
+    term: search.term === "winter" ? "winter" : "fall",
+    day: normalizeDay(search.day),
+  }),
+  component: MapRoute,
 });
 
-function MapStub() {
+function normalizeDay(value: unknown): DayNumber {
+  const day = Number(value);
+
+  return day >= 1 && day <= 7 && Number.isInteger(day) ? (day as DayNumber) : 1;
+}
+
+function MapRoute() {
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const catalog = useCatalogStore((state) => state.catalog);
+  const loadCatalog = useCatalogStore((state) => state.loadCatalog);
+  const plans = usePlanStore((state) => state.plans);
+  const activePlanId = usePlanStore((state) => state.activePlanId);
+  const activePlan = React.useMemo(
+    () => activePlanFromState({ plans, activePlanId }),
+    [activePlanId, plans],
+  );
+  const activeSessionsKey = activePlan.sessions.join(",");
+
+  React.useEffect(() => {
+    void loadCatalog(activePlan.sessions);
+  }, [activePlan.sessions, activeSessionsKey, loadCatalog]);
+
+  const coursesByKey = React.useMemo(() => {
+    const map = new Map<string, Course>();
+
+    catalog?.courses.forEach((course) => map.set(courseKey(course), course));
+    return map;
+  }, [catalog]);
+  const selectedSections = React.useMemo(
+    () => selectedSectionsFromPlan(activePlan, coursesByKey),
+    [activePlan, coursesByKey],
+  );
+
+  const term = search.term;
+  const day = search.day;
+
+  const daysWithMeetings = React.useMemo(
+    () => daysWithClasses(selectedSections, BUILDING_INDEX, term),
+    [selectedSections, term],
+  );
+  // Mon–Fri always shown; weekend tabs appear only when meetings exist there.
+  const dayOptions = React.useMemo(() => {
+    const days = new Set<DayNumber>(SCHOOL_DAYS);
+    daysWithMeetings.forEach((entry) => days.add(entry));
+    return [...days].sort((left, right) => left - right);
+  }, [daysWithMeetings]);
+
+  const itinerary = React.useMemo(
+    () => buildDayItinerary(selectedSections, BUILDING_INDEX, term, day),
+    [day, selectedSections, term],
+  );
+
+  function setTerm(nextTerm: Term) {
+    const nextDays = daysWithClasses(selectedSections, BUILDING_INDEX, nextTerm);
+    const nextDay = nextDays.includes(day) ? day : nextDays[0] ?? 1;
+
+    void navigate({ search: { term: nextTerm, day: nextDay } });
+  }
+
+  function setDay(nextDay: DayNumber) {
+    void navigate({ search: { term, day: nextDay } });
+  }
+
   return (
-    <main className="flex min-h-screen flex-col bg-background text-foreground">
-      <header className="flex h-16 items-center justify-between border-b px-4">
-        <div className="flex items-center gap-2">
-          <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Layers className="size-4" />
-          </div>
-          <div>
-            <h1 className="text-base font-semibold">better-ttb</h1>
-            <p className="text-xs text-muted-foreground">Map</p>
-          </div>
-        </div>
-        <nav className="flex items-center rounded-md bg-muted p-1">
-          <StubTab to="/" label="Build" />
-          <StubTab to="/timetable" label="Timetable" />
-          <StubTab to="/map" label="Map" icon={<MapIcon className="size-3.5" />} />
-        </nav>
-      </header>
-      <section className="flex flex-1 items-center justify-center p-8">
-        <div className="max-w-md rounded-md border border-dashed p-8 text-center">
-          <h2 className="text-lg font-semibold">Map coming in next phase</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Building data is wired into course details for room tooltips.
-          </p>
-        </div>
-      </section>
+    <main className="flex h-screen min-h-[640px] flex-col bg-background text-foreground">
+      <MapHeader />
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+        <Tabs value={term} onValueChange={(value) => setTerm(value as Term)}>
+          <TabsList>
+            <TabsTrigger value="fall">Fall</TabsTrigger>
+            <TabsTrigger value="winter">Winter</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <Tabs value={String(day)} onValueChange={(value) => setDay(Number(value) as DayNumber)}>
+          <TabsList>
+            {dayOptions.map((option) => (
+              <TabsTrigger key={option} value={String(option)}>
+                {formatDay(option)}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
+
+      <div
+        className="grid min-h-0 flex-1 border-t"
+        style={{ gridTemplateColumns: "minmax(0,1fr) minmax(300px,360px)" }}
+      >
+        <section className="relative min-h-0">
+          <MapCanvas itinerary={itinerary} />
+          {itinerary.unknownLocations.length > 0 && (
+            <div className="absolute bottom-3 left-3 z-[500] max-w-xs rounded-md border bg-background/95 p-2 text-xs shadow-sm">
+              <p className="font-medium">No location for:</p>
+              <p className="text-muted-foreground">
+                {itinerary.unknownLocations
+                  .map((entry) => `${entry.courseCode} ${entry.sectionName} (${entry.buildingCode})`)
+                  .join(", ")}
+              </p>
+            </div>
+          )}
+        </section>
+
+        <WalkPanel itinerary={itinerary} />
+      </div>
     </main>
   );
 }
 
-function StubTab({
+function MapCanvas({ itinerary }: { itinerary: DayItinerary }) {
+  const [mounted, setMounted] = React.useState(false);
+
+  // Render nothing during SSR / first paint; leaflet needs a real DOM + window.
+  React.useEffect(() => setMounted(true), []);
+
+  if (!mounted) {
+    return <div className="h-full w-full bg-muted/30" />;
+  }
+
+  return (
+    <React.Suspense fallback={<div className="h-full w-full bg-muted/30" />}>
+      <div className="relative h-full w-full">
+        <CampusMap itinerary={itinerary} />
+        {itinerary.markers.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 z-[500] flex items-center justify-center">
+            <div className="rounded-md border bg-background/95 px-4 py-3 text-center text-sm text-muted-foreground shadow-sm">
+              No in-person classes on this day
+            </div>
+          </div>
+        )}
+      </div>
+    </React.Suspense>
+  );
+}
+
+function WalkPanel({ itinerary }: { itinerary: DayItinerary }) {
+  return (
+    <aside className="min-h-0 overflow-y-auto border-l bg-background">
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background p-4">
+        <div>
+          <h2 className="text-sm font-semibold">Walking route</h2>
+          <p className="text-xs text-muted-foreground">
+            {formatDay(itinerary.day)} · {itinerary.markers.length} stops
+          </p>
+        </div>
+        <Badge variant="outline" className="gap-1">
+          <Footprints className="size-3" />
+          {Math.round(itinerary.totalWalkMinutes)} min
+        </Badge>
+      </div>
+
+      <div className="space-y-3 p-4">
+        {itinerary.transfers.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No building-to-building transfers on this day.
+          </p>
+        ) : (
+          itinerary.transfers.map((transfer, index) => (
+            <TransferRow key={`${transfer.from.key}-${transfer.to.key}-${index}`} transfer={transfer} />
+          ))
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function TransferRow({ transfer }: { transfer: ItineraryTransfer }) {
+  const tight = transfer.severity === "tight";
+  const warn = transfer.severity === "warn";
+
+  return (
+    <div
+      className={cn(
+        "rounded-md border bg-background p-3 text-sm",
+        tight && "border-destructive/50 bg-destructive/5",
+        warn && "border-amber-400/60 bg-amber-50",
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-medium">
+            {transfer.from.courseCode} {transfer.from.sectionName} ({transfer.from.buildingCode})
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {millisofdayToHHMM(transfer.from.endMillis)} → {millisofdayToHHMM(transfer.to.startMillis)}
+          </p>
+          <p className="font-medium">
+            {transfer.to.courseCode} {transfer.to.sectionName} ({transfer.to.buildingCode})
+          </p>
+        </div>
+        <MapPin
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground",
+            tight && "text-destructive",
+            warn && "text-amber-600",
+          )}
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <Badge variant="secondary">gap {Math.round(transfer.gapMin)} min</Badge>
+        <Badge variant="secondary">walk ~{Math.round(transfer.walkMin)} min</Badge>
+        {tight && (
+          <span className="inline-flex items-center gap-1 font-medium text-destructive">
+            <TriangleAlert className="size-3.5" />
+            not walkable in time
+          </span>
+        )}
+        {warn && (
+          <span className="inline-flex items-center gap-1 font-medium text-amber-700">
+            <TriangleAlert className="size-3.5" />
+            tight
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MapHeader() {
+  return (
+    <header className="flex h-16 shrink-0 items-center justify-between gap-4 px-4">
+      <div className="flex min-w-0 items-center gap-4">
+        <div className="flex items-center gap-2">
+          <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <Layers className="size-4" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-semibold">better-ttb</h1>
+            <p className="truncate text-xs text-muted-foreground">Map</p>
+          </div>
+        </div>
+
+        <nav className="hidden items-center rounded-md bg-muted p-1 md:flex">
+          <NavTab to="/" label="Build" />
+          <NavTab to="/timetable" label="Timetable" icon={<CalendarDays className="size-3.5" />} />
+          <NavTab to="/map" label="Map" icon={<MapIcon className="size-3.5" />} />
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+function NavTab({
   to,
   label,
   icon,
 }: {
   to: "/" | "/timetable" | "/map";
   label: string;
-  icon?: ReactNode;
+  icon?: React.ReactNode;
 }) {
   return (
     <Link
