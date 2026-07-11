@@ -19,6 +19,8 @@ The scraper should run in chunks:
 
 No rate limit was observed in testing, but bursts should stay modest. Avoid proxying bulk user traffic live when a nightly artifact is enough.
 
+The Cloudflare cron trigger is declared in `alchemy.run.ts` and handled by `apps/web/src/server.ts`, which delegates HTTP traffic to TanStack Start's default server entry and handles the Workers `scheduled` event by running one scrape chunk with `env.SESSIONS`.
+
 ## TTB semantics
 
 No results use HTTP 404 with the internal 4404 shape:

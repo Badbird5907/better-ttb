@@ -1,22 +1,40 @@
-import type { Course, Section } from "@better-ttb/shared";
+export type {
+  CandidateExtras,
+  CandidateTimetable,
+  Coordinates,
+  CourseInput,
+  GenerationResult,
+  GenerationStats,
+  GeneratorConfig,
+  RuleConfig,
+  RuleMetric,
+  Selection,
+  TightTransfer,
+  TimetableConflict,
+} from "./types";
+export { detectConflicts } from "./conflicts";
+export { generate } from "./engine";
+export { walkMinutes, minutesToMillis } from "./time";
 
-export interface GeneratorRule {
-  id: string;
-  label: string;
-  enabled: boolean;
-}
-
-export interface GeneratorConfig {
-  courses: Course[];
-  rules: GeneratorRule[];
-}
-
-export interface CandidateTimetable {
-  sections: Section[];
-  score: number;
-}
-
-export function generate(_config: GeneratorConfig): CandidateTimetable[] {
-  // TODO: implement timetable generation engine.
-  return [];
-}
+export const DEFAULT_RULES = [
+  {
+    id: "max-gap",
+    kind: "max-gap",
+    mode: "soft",
+    weight: 0.5,
+    maxGapMinutes: 120,
+  },
+  {
+    id: "avoid-waitlist",
+    kind: "avoid-waitlist",
+    mode: "soft",
+    weight: 0.3,
+  },
+  {
+    id: "earliest-start",
+    kind: "earliest-start",
+    mode: "soft",
+    weight: 0.2,
+    millisofday: 9 * 60 * 60 * 1000,
+  },
+] satisfies import("./types").RuleConfig[];

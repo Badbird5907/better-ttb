@@ -10,11 +10,27 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiShareRouteImport } from './routes/api/share'
+import { Route as ApiReferenceDataRouteImport } from './routes/api/reference-data'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiCatalogRouteImport } from './routes/api/catalog'
+import { Route as ApiShareIdRouteImport } from './routes/api/share.$id'
+import { Route as ApiCourseCodeRouteImport } from './routes/api/course.$code'
+import { Route as ApiAdminScrapeRouteImport } from './routes/api/admin.scrape'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiShareRoute = ApiShareRouteImport.update({
+  id: '/api/share',
+  path: '/api/share',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiReferenceDataRoute = ApiReferenceDataRouteImport.update({
+  id: '/api/reference-data',
+  path: '/api/reference-data',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
@@ -22,31 +38,99 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCatalogRoute = ApiCatalogRouteImport.update({
+  id: '/api/catalog',
+  path: '/api/catalog',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiShareIdRoute = ApiShareIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiShareRoute,
+} as any)
+const ApiCourseCodeRoute = ApiCourseCodeRouteImport.update({
+  id: '/api/course/$code',
+  path: '/api/course/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAdminScrapeRoute = ApiAdminScrapeRouteImport.update({
+  id: '/api/admin/scrape',
+  path: '/api/admin/scrape',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/catalog': typeof ApiCatalogRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/reference-data': typeof ApiReferenceDataRoute
+  '/api/share': typeof ApiShareRouteWithChildren
+  '/api/admin/scrape': typeof ApiAdminScrapeRoute
+  '/api/course/$code': typeof ApiCourseCodeRoute
+  '/api/share/$id': typeof ApiShareIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/catalog': typeof ApiCatalogRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/reference-data': typeof ApiReferenceDataRoute
+  '/api/share': typeof ApiShareRouteWithChildren
+  '/api/admin/scrape': typeof ApiAdminScrapeRoute
+  '/api/course/$code': typeof ApiCourseCodeRoute
+  '/api/share/$id': typeof ApiShareIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/catalog': typeof ApiCatalogRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/reference-data': typeof ApiReferenceDataRoute
+  '/api/share': typeof ApiShareRouteWithChildren
+  '/api/admin/scrape': typeof ApiAdminScrapeRoute
+  '/api/course/$code': typeof ApiCourseCodeRoute
+  '/api/share/$id': typeof ApiShareIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/health'
+  fullPaths:
+    | '/'
+    | '/api/catalog'
+    | '/api/health'
+    | '/api/reference-data'
+    | '/api/share'
+    | '/api/admin/scrape'
+    | '/api/course/$code'
+    | '/api/share/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/health'
-  id: '__root__' | '/' | '/api/health'
+  to:
+    | '/'
+    | '/api/catalog'
+    | '/api/health'
+    | '/api/reference-data'
+    | '/api/share'
+    | '/api/admin/scrape'
+    | '/api/course/$code'
+    | '/api/share/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/catalog'
+    | '/api/health'
+    | '/api/reference-data'
+    | '/api/share'
+    | '/api/admin/scrape'
+    | '/api/course/$code'
+    | '/api/share/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiCatalogRoute: typeof ApiCatalogRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiReferenceDataRoute: typeof ApiReferenceDataRoute
+  ApiShareRoute: typeof ApiShareRouteWithChildren
+  ApiAdminScrapeRoute: typeof ApiAdminScrapeRoute
+  ApiCourseCodeRoute: typeof ApiCourseCodeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -58,6 +142,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/share': {
+      id: '/api/share'
+      path: '/api/share'
+      fullPath: '/api/share'
+      preLoaderRoute: typeof ApiShareRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/reference-data': {
+      id: '/api/reference-data'
+      path: '/api/reference-data'
+      fullPath: '/api/reference-data'
+      preLoaderRoute: typeof ApiReferenceDataRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/health': {
       id: '/api/health'
       path: '/api/health'
@@ -65,12 +163,57 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/catalog': {
+      id: '/api/catalog'
+      path: '/api/catalog'
+      fullPath: '/api/catalog'
+      preLoaderRoute: typeof ApiCatalogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/share/$id': {
+      id: '/api/share/$id'
+      path: '/$id'
+      fullPath: '/api/share/$id'
+      preLoaderRoute: typeof ApiShareIdRouteImport
+      parentRoute: typeof ApiShareRoute
+    }
+    '/api/course/$code': {
+      id: '/api/course/$code'
+      path: '/api/course/$code'
+      fullPath: '/api/course/$code'
+      preLoaderRoute: typeof ApiCourseCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/admin/scrape': {
+      id: '/api/admin/scrape'
+      path: '/api/admin/scrape'
+      fullPath: '/api/admin/scrape'
+      preLoaderRoute: typeof ApiAdminScrapeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
+interface ApiShareRouteChildren {
+  ApiShareIdRoute: typeof ApiShareIdRoute
+}
+
+const ApiShareRouteChildren: ApiShareRouteChildren = {
+  ApiShareIdRoute: ApiShareIdRoute,
+}
+
+const ApiShareRouteWithChildren = ApiShareRoute._addFileChildren(
+  ApiShareRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiCatalogRoute: ApiCatalogRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiReferenceDataRoute: ApiReferenceDataRoute,
+  ApiShareRoute: ApiShareRouteWithChildren,
+  ApiAdminScrapeRoute: ApiAdminScrapeRoute,
+  ApiCourseCodeRoute: ApiCourseCodeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

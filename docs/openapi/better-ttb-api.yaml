@@ -32,7 +32,7 @@ paths:
       parameters:
         - name: sessions
           in: query
-          required: true
+          required: false
           schema:
             type: string
           description: Comma-separated session codes.
@@ -69,6 +69,8 @@ paths:
                     sections: []
         '304':
           description: Catalog has not changed.
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/course/{code}:
     get:
       tags: [Courses]
@@ -112,9 +114,14 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties:
-                  type: array
-                  items: {}
+                properties:
+                  payload:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items: {}
+                  status:
+                    $ref: '#/components/schemas/StatusList'
   /api/share:
     post:
       tags: [Sharing]
@@ -148,7 +155,7 @@ paths:
                   id:
                     type: string
               example:
-                id: sh_01J0ABCDEF1234567890
+                id: A1b2C3d4
   /api/share/{id}:
     get:
       tags: [Sharing]
@@ -203,27 +210,35 @@ paths:
               maxPages: 40
               reset: false
       responses:
-        '200':
+        '202':
           description: Scrape status and cursor.
           content:
             application/json:
               schema:
                 type: object
-                required: [status, cursor]
+                required: [status, pagesDone, total, cursor]
                 properties:
                   status:
                     type: string
-                    enum: [started, resumed, complete]
+                    enum: [running, complete]
+                  pagesDone:
+                    type: integer
+                  total:
+                    oneOf:
+                      - type: integer
+                      - type: 'null'
                   cursor:
-                    type: object
-                    additionalProperties: true
+                    oneOf:
+                      - type: object
+                        additionalProperties: true
+                      - type: 'null'
               example:
-                status: resumed
+                status: running
+                pagesDone: 40
+                total: 3751
                 cursor:
                   sessions: ["20269", "20271", "20269-20271"]
-                  division: ARTSC
                   page: 41
-                  pageSize: 20
                   total: 3751
         '401':
           description: Missing or invalid admin bearer token.
@@ -266,18 +281,31 @@ components:
     CourseLookupResponse:
       type: object
       properties:
-        course:
-          $ref: '#/components/schemas/Course'
-        courses:
-          type: array
-          items:
-            $ref: '#/components/schemas/Course'
-      description: Implementation may return one course or all matching offerings, depending on how section codes are handled.
+        payload:
+          oneOf:
+            - $ref: '#/components/schemas/Course'
+            - type: array
+              items:
+                $ref: '#/components/schemas/Course'
+            - type: object
+              additionalProperties: true
+        status:
+          $ref: '#/components/schemas/StatusList'
+      description: Upstream TTB lookup envelope returned by the live proxy.
     Error:
       type: object
       properties:
         error:
           type: string
+    StatusList:
+      type: array
+      items:
+        type: object
+        properties:
+          code:
+            type: integer
+          message:
+            type: string
     Course:
       type: object
       description: Course schema equivalent to the upstream TTB course model.
