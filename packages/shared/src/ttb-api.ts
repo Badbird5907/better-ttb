@@ -131,7 +131,7 @@ export interface Course {
   minCredit: number;
   breadths: Array<Record<string, unknown>>;
   notes: Note[];
-  cmCourseInfo: CourseInfo;
+  cmCourseInfo: CourseInfo | null;
   sections: Section[];
   primaryTeachMethod: string;
   fullyOnline: boolean;

@@ -25,6 +25,7 @@ export const web = await TanStackStart("web", {
     ADMIN_TOKEN: alchemy.secret(process.env.ADMIN_TOKEN ?? "dev-admin-token"),
   },
   crons: ["0 8 * * *"],
+  domains: ["ttb.evanyu.dev"],
 });
 
 console.log({ url: web.url });

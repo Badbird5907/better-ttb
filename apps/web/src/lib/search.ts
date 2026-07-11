@@ -70,7 +70,7 @@ export function createCourseSearch(courses: Course[]): CourseSearchIndex {
     id: courseSearchId(course),
     code: course.code,
     name: course.name,
-    description: stripHtml(course.cmCourseInfo.description),
+    description: stripHtml(course.cmCourseInfo?.description ?? null),
   }));
   const byId = new Map<string, Course>();
 
@@ -178,7 +178,7 @@ export function getCourseBreadthCodes(course: Course): string[] {
   const codes = new Set<string>();
 
   course.breadths.forEach((breadth) => collectBreadthCodes(breadth, codes));
-  course.cmCourseInfo.breadthRequirements.forEach((breadth) => {
+  (course.cmCourseInfo?.breadthRequirements ?? []).forEach((breadth) => {
     const match = breadth.match(/\bBR\s*=?\s*([1-5])\b/i);
 
     if (match?.[1]) {

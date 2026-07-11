@@ -1433,19 +1433,19 @@ function CourseDetailBody({ course }: { course: Course }) {
           className="prose prose-sm max-w-none text-sm leading-6 text-muted-foreground [&_a]:text-primary [&_li]:ml-4 [&_ul]:list-disc"
           dangerouslySetInnerHTML={{
             __html:
-              sanitizeHtml(info.description) ||
+              sanitizeHtml(info?.description ?? null) ||
               "<p>No course description is available.</p>",
           }}
         />
       </section>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <RequirementBlock title="Prerequisites" html={info.prerequisitesText} />
-        <RequirementBlock title="Corequisites" html={info.corequisitesText} />
-        <RequirementBlock title="Exclusions" html={info.exclusionsText} />
+        <RequirementBlock title="Prerequisites" html={info?.prerequisitesText ?? null} />
+        <RequirementBlock title="Corequisites" html={info?.corequisitesText ?? null} />
+        <RequirementBlock title="Exclusions" html={info?.exclusionsText ?? null} />
         <RequirementBlock
           title="Recommended preparation"
-          html={info.recommendedPreparation}
+          html={info?.recommendedPreparation ?? null}
         />
       </div>
 
