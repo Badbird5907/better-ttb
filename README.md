@@ -40,13 +40,25 @@ The Alchemy Vite plugin requires Alchemy's generated `.alchemy/local/wrangler.js
 
 ## Deploy
 
-Deployment provisions the Worker, D1 database, and KV namespace via Alchemy:
+Deployment provisions the Worker, D1 database, and KV namespace via Alchemy.
 
-```sh
-ADMIN_TOKEN=<secret> npm run deploy   # or: npm run alchemy
+One-time setup: `npx alchemy configure` (select Cloudflare, OAuth login), then
+create a root `.env` (gitignored) with:
+
+```
+ADMIN_TOKEN=<secret>        # guards the scrape endpoint
+ALCHEMY_PASSWORD=<secret>   # encrypts secrets in Alchemy state — keep stable across deploys
 ```
 
-Set the `ADMIN_TOKEN` secret before deploying; it guards the scrape endpoint.
+Then:
+
+```sh
+set -a && source .env && set +a && npm run deploy
+```
+
+Note: deploy must go through the `alchemy` CLI (the npm script does), not plain
+`tsx alchemy.run.ts` — the CLI generates `.alchemy/local/wrangler.jsonc`, which
+the Alchemy Vite plugin requires during the build.
 After the first deploy the catalog is empty — populate it by calling the admin
 scrape endpoint (also run daily by the configured cron):
 

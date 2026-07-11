@@ -1,15 +1,19 @@
 import alchemy from "alchemy";
 import { D1Database, KVNamespace, TanStackStart } from "alchemy/cloudflare";
 
-const app = await alchemy("better-ttb");
+const app = await alchemy("better-ttb", {
+  password: process.env.ALCHEMY_PASSWORD,
+});
 
 const db = await D1Database("db", {
   name: "better-ttb-db",
   migrationsDir: "apps/web/migrations",
+  adopt: true,
 });
 
 const kv = await KVNamespace("kv", {
   title: "better-ttb-kv",
+  adopt: true,
 });
 
 export const web = await TanStackStart("web", {
