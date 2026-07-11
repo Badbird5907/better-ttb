@@ -21,19 +21,19 @@ import {
   Filter,
   Layers,
   MapIcon,
-  MoreHorizontal,
   Pencil,
   Pin,
   PinOff,
   Plus,
   RefreshCw,
-  Search,
   Trash2,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import * as React from "react";
 
 import buildings from "@/data/buildings.json";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   DAY_FILTERS,
   DEFAULT_SEARCH_FILTERS,
@@ -74,7 +74,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sheet,
   SheetContent,
@@ -83,6 +83,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -91,6 +92,7 @@ import {
 } from "@/components/ui/tooltip";
 
 export const Route = createFileRoute("/")({
+  head: () => ({ meta: [{ title: "Search · better-ttb" }] }),
   component: Home,
 });
 
@@ -153,6 +155,8 @@ function Home() {
   const [selectedCourseKey, setSelectedCourseKey] = React.useState<string | null>(
     null,
   );
+  const [activeIndex, setActiveIndex] = React.useState(0);
+  const [mobileTab, setMobileTab] = React.useState<"search" | "pinned">("search");
   const [liveCourses, setLiveCourses] = React.useState<Map<string, Course>>(
     () => new Map(),
   );
@@ -238,6 +242,10 @@ function Home() {
         : ([] satisfies Course[]),
     [debouncedQuery, filters, searchIndex],
   );
+
+  React.useEffect(() => {
+    setActiveIndex(0);
+  }, [debouncedQuery, filters]);
   const breadthOptions = React.useMemo(() => {
     const breadths = new Set<string>();
 
@@ -354,6 +362,50 @@ function Home() {
     });
   }
 
+  function togglePinCourse(course: Course) {
+    if (isCoursePinned(activePlan, course.code, course.sectionCode)) {
+      unpinCourse(course.code, course.sectionCode);
+    } else {
+      pinCourse(course.code, course.sectionCode);
+    }
+  }
+
+  function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (results.length === 0) {
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      // stop cmdk's root handler from also acting on arrow keys.
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveIndex((current) => Math.min(current + 1, results.length - 1));
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveIndex((current) => Math.max(current - 1, 0));
+      return;
+    }
+
+    const activeCourse = results[activeIndex];
+
+    if (event.key === "Enter" && activeCourse) {
+      event.preventDefault();
+      event.stopPropagation();
+      setSelectedCourseKey(courseKey(activeCourse));
+      return;
+    }
+
+    if ((event.key === "p" || event.key === "P") && activeCourse) {
+      event.preventDefault();
+      event.stopPropagation();
+      togglePinCourse(activeCourse);
+    }
+  }
+
   return (
     <TooltipProvider>
       <main className="flex h-screen min-h-[720px] flex-col bg-background text-foreground">
@@ -379,11 +431,33 @@ function Home() {
           }}
         />
 
+        <div className="border-t p-1 lg:hidden">
+          <Tabs
+            value={mobileTab}
+            onValueChange={(value) => setMobileTab(value as "search" | "pinned")}
+          >
+            <TabsList className="w-full">
+              <TabsTrigger value="search" className="flex-1">
+                Search
+              </TabsTrigger>
+              <TabsTrigger value="pinned" className="flex-1">
+                Pinned
+                <Badge variant="secondary">{activePlan.pinned.length}</Badge>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
         {status === "empty" ? (
           <CatalogEmptyState />
         ) : (
           <div className="grid min-h-0 flex-1 grid-cols-1 border-t lg:grid-cols-[minmax(440px,1fr)_420px] xl:grid-cols-[minmax(560px,1fr)_460px]">
-            <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r bg-muted/20">
+            <section
+              className={cn(
+                "min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r bg-muted/20 lg:grid",
+                mobileTab === "search" ? "grid" : "hidden lg:grid",
+              )}
+            >
               <SearchPanel
                 query={query}
                 filters={filters}
@@ -392,6 +466,7 @@ function Home() {
                 breadthOptions={breadthOptions}
                 creditOptions={creditOptions}
                 onQueryChange={setQuery}
+                onSearchKeyDown={handleSearchKeyDown}
                 onClearFilters={() => setFilters(DEFAULT_SEARCH_FILTERS)}
                 onToggleArrayFilter={toggleArrayFilter}
                 onInstructorChange={(instructor) =>
@@ -407,6 +482,8 @@ function Home() {
                 catalogTotal={catalog?.total ?? 0}
                 results={results}
                 activePlan={activePlan}
+                activeIndex={activeIndex}
+                onRetry={() => void loadCatalog(activePlan.sessions)}
                 onOpenCourse={(course) => setSelectedCourseKey(courseKey(course))}
                 onPinCourse={(course) => pinCourse(course.code, course.sectionCode)}
                 onUnpinCourse={(course) =>
@@ -418,6 +495,7 @@ function Home() {
             <PlanPanel
               plan={activePlan}
               coursesByKey={coursesByKey}
+              className={cn(mobileTab === "pinned" ? "flex" : "hidden lg:flex")}
               onChoose={choose}
               onClearChoice={clearChoice}
               onUnpin={unpinCourse}
@@ -438,6 +516,9 @@ function Home() {
             if (!open) {
               setSelectedCourseKey(null);
               setRefreshError(null);
+              document
+                .querySelector<HTMLInputElement>("[data-course-search]")
+                ?.focus();
             }
           }}
           onPin={(course) => pinCourse(course.code, course.sectionCode)}
@@ -525,10 +606,18 @@ function BuilderHeader({
         <HeaderIconButton label="New plan" onClick={onNewPlan}>
           <Plus />
         </HeaderIconButton>
-        <HeaderIconButton label="Rename plan" onClick={onRenamePlan}>
+        <HeaderIconButton
+          label="Rename plan"
+          onClick={onRenamePlan}
+          className="hidden sm:inline-flex"
+        >
           <Pencil />
         </HeaderIconButton>
-        <HeaderIconButton label="Duplicate plan" onClick={onDuplicatePlan}>
+        <HeaderIconButton
+          label="Duplicate plan"
+          onClick={onDuplicatePlan}
+          className="hidden sm:inline-flex"
+        >
           <Copy />
         </HeaderIconButton>
         <HeaderIconButton
@@ -538,6 +627,7 @@ function BuilderHeader({
         >
           <Trash2 />
         </HeaderIconButton>
+        <ThemeToggle />
       </div>
     </header>
   );
@@ -593,6 +683,7 @@ function SearchPanel({
   breadthOptions,
   creditOptions,
   onQueryChange,
+  onSearchKeyDown,
   onClearFilters,
   onToggleArrayFilter,
   onInstructorChange,
@@ -605,6 +696,7 @@ function SearchPanel({
   breadthOptions: string[];
   creditOptions: number[];
   onQueryChange: (query: string) => void;
+  onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onClearFilters: () => void;
   onToggleArrayFilter: (key: ArrayFilterKey, value: string | number) => void;
   onInstructorChange: (value: string) => void;
@@ -623,6 +715,7 @@ function SearchPanel({
           data-course-search
           value={query}
           onValueChange={onQueryChange}
+          onKeyDown={onSearchKeyDown}
           placeholder="Search code, title, description"
           className="h-11"
         />
@@ -859,6 +952,8 @@ function CourseResults({
   catalogTotal,
   results,
   activePlan,
+  activeIndex,
+  onRetry,
   onOpenCourse,
   onPinCourse,
   onUnpinCourse,
@@ -868,10 +963,13 @@ function CourseResults({
   catalogTotal: number;
   results: Course[];
   activePlan: Plan;
+  activeIndex: number;
+  onRetry: () => void;
   onOpenCourse: (course: Course) => void;
   onPinCourse: (course: Course) => void;
   onUnpinCourse: (course: Course) => void;
 }) {
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = React.useState(0);
   const startIndex = Math.max(
     0,
@@ -880,18 +978,35 @@ function CourseResults({
   const visibleCount = 16 + RESULT_OVERSCAN * 2;
   const visibleCourses = results.slice(startIndex, startIndex + visibleCount);
 
+  // Keep the keyboard-highlighted row within the scroll viewport.
+  React.useEffect(() => {
+    const container = scrollRef.current;
+
+    if (!container || results.length === 0) {
+      return;
+    }
+
+    const rowTop = activeIndex * RESULT_ROW_HEIGHT;
+    const rowBottom = rowTop + RESULT_ROW_HEIGHT;
+
+    if (rowTop < container.scrollTop) {
+      container.scrollTop = rowTop;
+    } else if (rowBottom > container.scrollTop + container.clientHeight) {
+      container.scrollTop = rowBottom - container.clientHeight;
+    }
+  }, [activeIndex, results.length]);
+
   if (status === "loading" || status === "idle") {
-    return (
-      <div className="flex items-center justify-center p-8 text-sm text-muted-foreground">
-        Loading catalog…
-      </div>
-    );
+    return <CourseResultsSkeleton />;
   }
 
   if (status === "error") {
     return (
-      <div className="flex items-center justify-center p-8 text-sm text-destructive">
-        {error ?? "Catalog could not be loaded."}
+      <div className="p-4">
+        <InlineError
+          message={error ?? "Catalog could not be loaded."}
+          onRetry={onRetry}
+        />
       </div>
     );
   }
@@ -910,6 +1025,7 @@ function CourseResults({
         </div>
       ) : (
         <div
+          ref={scrollRef}
           className="min-h-0 flex-1 overflow-y-auto"
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         >
@@ -921,7 +1037,7 @@ function CourseResults({
               className="absolute inset-x-0 top-0"
               style={{ transform: `translateY(${startIndex * RESULT_ROW_HEIGHT}px)` }}
             >
-              {visibleCourses.map((course) => {
+              {visibleCourses.map((course, offset) => {
                 const pinned = isCoursePinned(
                   activePlan,
                   course.code,
@@ -933,6 +1049,7 @@ function CourseResults({
                     key={courseKey(course)}
                     course={course}
                     pinned={pinned}
+                    active={startIndex + offset === activeIndex}
                     onOpen={() => onOpenCourse(course)}
                     onPin={() => onPinCourse(course)}
                     onUnpin={() => onUnpinCourse(course)}
@@ -950,12 +1067,14 @@ function CourseResults({
 function CourseResultRow({
   course,
   pinned,
+  active,
   onOpen,
   onPin,
   onUnpin,
 }: {
   course: Course;
   pinned: boolean;
+  active: boolean;
   onOpen: () => void;
   onPin: () => void;
   onUnpin: () => void;
@@ -969,7 +1088,11 @@ function CourseResultRow({
       <button
         type="button"
         onClick={onOpen}
-        className="grid h-full w-full grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md border bg-background p-3 text-left shadow-xs transition-colors hover:border-ring/60 hover:bg-accent/40"
+        aria-current={active}
+        className={cn(
+          "grid h-full w-full grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md border bg-background p-3 text-left shadow-xs transition-colors hover:border-ring/60 hover:bg-accent/40",
+          active && "border-ring ring-[3px] ring-ring/50 bg-accent/40",
+        )}
       >
         <div className="min-w-0 space-y-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -1013,12 +1136,14 @@ function CourseResultRow({
 function PlanPanel({
   plan,
   coursesByKey,
+  className,
   onChoose,
   onClearChoice,
   onUnpin,
 }: {
   plan: Plan;
   coursesByKey: Map<string, Course>;
+  className?: string;
   onChoose: (
     courseCode: string,
     sectionCode: SectionCode,
@@ -1042,7 +1167,7 @@ function PlanPanel({
   );
 
   return (
-    <aside className="flex min-h-0 flex-col bg-background">
+    <aside className={cn("min-h-0 flex-col bg-background", className)}>
       <div className="space-y-3 border-b p-4">
         <div className="flex items-center justify-between">
           <div>
@@ -1481,9 +1606,12 @@ function SectionBadge({ sectionCode }: { sectionCode: SectionCode }) {
       variant="outline"
       className={cn(
         "border-transparent",
-        sectionCode === "F" && "bg-emerald-100 text-emerald-800",
-        sectionCode === "S" && "bg-sky-100 text-sky-800",
-        sectionCode === "Y" && "bg-amber-100 text-amber-900",
+        sectionCode === "F" &&
+          "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300",
+        sectionCode === "S" &&
+          "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300",
+        sectionCode === "Y" &&
+          "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-300",
       )}
     >
       {sectionCode}
@@ -1500,6 +1628,54 @@ function CatalogEmptyState() {
           Run <span className="font-mono">POST /api/admin/scrape</span> to build the
           cached catalog artifact.
         </p>
+      </div>
+    </div>
+  );
+}
+
+function CourseResultsSkeleton() {
+  return (
+    <div className="flex min-h-0 flex-col">
+      <div className="flex h-11 items-center justify-between border-b bg-background px-4">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-4 w-28" />
+      </div>
+      <div className="space-y-2 overflow-hidden p-3">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div key={index} className="rounded-md border bg-background p-3">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-8" />
+            </div>
+            <Skeleton className="mt-2 h-4 w-3/4" />
+            <div className="mt-2 flex gap-1.5">
+              <Skeleton className="h-5 w-16" />
+              <Skeleton className="h-5 w-12" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InlineError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
+      <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
+      <div className="min-w-0 flex-1 space-y-2">
+        <p className="font-medium text-destructive">Something went wrong</p>
+        <p className="text-muted-foreground break-words">{message}</p>
+        <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+          <RefreshCw />
+          Retry
+        </Button>
       </div>
     </div>
   );

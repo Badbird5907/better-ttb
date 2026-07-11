@@ -4,6 +4,7 @@ import * as L from "leaflet";
 import { millisofdayToHHMM } from "@better-ttb/shared";
 import * as React from "react";
 
+import { useResolvedTheme } from "@/components/theme-toggle";
 import type { DayItinerary, ItineraryMarker } from "@/lib/itinerary";
 
 interface CampusMapProps {
@@ -14,8 +15,10 @@ const ST_GEORGE_CENTER: L.LatLngTuple = [43.6629, -79.3957];
 const DEFAULT_ZOOM = 15;
 const CARTO_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
-const CARTO_TILE_URL =
-  "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+const CARTO_TILE_URLS = {
+  light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+  dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+} as const;
 
 /**
  * Imperative leaflet map. Kept in a separate module that is only imported by the
@@ -26,6 +29,8 @@ export function CampusMap({ itinerary }: CampusMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<L.Map | null>(null);
   const layerRef = React.useRef<L.LayerGroup | null>(null);
+  const tileLayerRef = React.useRef<L.TileLayer | null>(null);
+  const resolvedTheme = useResolvedTheme();
 
   React.useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -38,7 +43,7 @@ export function CampusMap({ itinerary }: CampusMapProps) {
       scrollWheelZoom: true,
     });
 
-    L.tileLayer(CARTO_TILE_URL, {
+    tileLayerRef.current = L.tileLayer(CARTO_TILE_URLS.light, {
       attribution: CARTO_ATTRIBUTION,
       maxZoom: 19,
       subdomains: "abcd",
@@ -51,8 +56,13 @@ export function CampusMap({ itinerary }: CampusMapProps) {
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
+      tileLayerRef.current = null;
     };
   }, []);
+
+  React.useEffect(() => {
+    tileLayerRef.current?.setUrl(CARTO_TILE_URLS[resolvedTheme]);
+  }, [resolvedTheme]);
 
   React.useEffect(() => {
     const map = mapRef.current;

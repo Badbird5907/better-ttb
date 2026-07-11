@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
+import { ThemeToggle } from "@/components/theme-toggle";
 import { WeekGrid } from "@/components/timetable/WeekGrid";
 import type { BlockedWindow } from "@/components/timetable/WeekGrid";
 import { BUILDING_INDEX } from "@/lib/buildings";
@@ -122,6 +123,7 @@ import type {
 } from "@/workers/generator-contract";
 
 export const Route = createFileRoute("/timetable")({
+  head: () => ({ meta: [{ title: "Timetable · better-ttb" }] }),
   component: TimetableRoute,
 });
 
@@ -452,12 +454,14 @@ function TimetableRoute() {
         />
 
         <div
-          className="grid min-h-0 flex-1 border-t"
-          style={{
-            gridTemplateColumns: panelOpen
-              ? "minmax(0,1fr) minmax(340px,390px)"
-              : "minmax(0,1fr) 44px",
-          }}
+          className="grid min-h-0 flex-1 grid-cols-1 border-t lg:grid-cols-[var(--tt-cols)]"
+          style={
+            {
+              "--tt-cols": panelOpen
+                ? "minmax(0,1fr) minmax(340px,390px)"
+                : "minmax(0,1fr) 44px",
+            } as React.CSSProperties
+          }
         >
           <section className="min-h-0 overflow-y-auto bg-muted/20 p-4">
             <div className="mx-auto flex max-w-7xl flex-col gap-4">
@@ -497,6 +501,11 @@ function TimetableRoute() {
               )}
               {catalogError && <Banner tone="warn">Catalog warning: {catalogError}</Banner>}
               {status === "loading" && <Banner>Loading catalog for this plan.</Banner>}
+              {status === "empty" && (
+                <Banner tone="warn">
+                  Catalog not scraped yet. Run POST /api/admin/scrape to populate courses.
+                </Banner>
+              )}
               {hasConflicts && (
                 <Banner tone="error">
                   Conflicts detected. Overlapping blocks are outlined in red.
@@ -712,6 +721,7 @@ function TimetableHeader({
           <Share2 />
           Share
         </Button>
+        <ThemeToggle />
       </div>
     </header>
   );
@@ -849,7 +859,7 @@ function GeneratePanel({
             </Button>
           </div>
           {blockoutMode && (
-            <p className="rounded-md border border-amber-500/30 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <p className="rounded-md border border-amber-500/30 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
               Paint 30-minute cells on the grid. {blockedWindows.length} blocked windows are active.
             </p>
           )}
@@ -1452,7 +1462,8 @@ function Banner({
     <div
       className={cn(
         "rounded-md border bg-background px-3 py-2 text-sm",
-        tone === "warn" && "border-amber-400/50 bg-amber-50 text-amber-900",
+        tone === "warn" &&
+          "border-amber-400/50 bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200",
         tone === "error" && "border-destructive/40 bg-destructive/5 text-destructive",
       )}
     >

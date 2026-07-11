@@ -4,6 +4,7 @@ import { formatDay, millisofdayToHHMM } from "@better-ttb/shared";
 import { CalendarDays, Footprints, Layers, MapIcon, MapPin, TriangleAlert } from "lucide-react";
 import * as React from "react";
 
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -38,6 +39,7 @@ export const Route = createFileRoute("/map")({
     term: search.term === "winter" ? "winter" : "fall",
     day: normalizeDay(search.day),
   }),
+  head: () => ({ meta: [{ title: "Map · better-ttb" }] }),
   component: MapRoute,
 });
 
@@ -128,10 +130,7 @@ function MapRoute() {
         </Tabs>
       </div>
 
-      <div
-        className="grid min-h-0 flex-1 border-t"
-        style={{ gridTemplateColumns: "minmax(0,1fr) minmax(300px,360px)" }}
-      >
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(240px,1fr)_auto] border-t md:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] md:grid-rows-1">
         <section className="relative min-h-0">
           <MapCanvas itinerary={itinerary} />
           {itinerary.unknownLocations.length > 0 && (
@@ -180,7 +179,7 @@ function MapCanvas({ itinerary }: { itinerary: DayItinerary }) {
 
 function WalkPanel({ itinerary }: { itinerary: DayItinerary }) {
   return (
-    <aside className="min-h-0 overflow-y-auto border-l bg-background">
+    <aside className="min-h-0 overflow-y-auto border-t bg-background md:border-t-0 md:border-l">
       <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background p-4">
         <div>
           <h2 className="text-sm font-semibold">Walking route</h2>
@@ -218,7 +217,7 @@ function TransferRow({ transfer }: { transfer: ItineraryTransfer }) {
       className={cn(
         "rounded-md border bg-background p-3 text-sm",
         tight && "border-destructive/50 bg-destructive/5",
-        warn && "border-amber-400/60 bg-amber-50",
+        warn && "border-amber-400/60 bg-amber-50 dark:bg-amber-500/10",
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -237,7 +236,7 @@ function TransferRow({ transfer }: { transfer: ItineraryTransfer }) {
           className={cn(
             "size-4 shrink-0 text-muted-foreground",
             tight && "text-destructive",
-            warn && "text-amber-600",
+            warn && "text-amber-600 dark:text-amber-400",
           )}
         />
       </div>
@@ -251,7 +250,7 @@ function TransferRow({ transfer }: { transfer: ItineraryTransfer }) {
           </span>
         )}
         {warn && (
-          <span className="inline-flex items-center gap-1 font-medium text-amber-700">
+          <span className="inline-flex items-center gap-1 font-medium text-amber-700 dark:text-amber-400">
             <TriangleAlert className="size-3.5" />
             tight
           </span>
@@ -281,6 +280,7 @@ function MapHeader() {
           <NavTab to="/map" label="Map" icon={<MapIcon className="size-3.5" />} />
         </nav>
       </div>
+      <ThemeToggle />
     </header>
   );
 }

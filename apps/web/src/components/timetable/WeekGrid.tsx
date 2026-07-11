@@ -57,6 +57,9 @@ export function WeekGrid({
   const gridTemplateColumns = compact
     ? `28px repeat(${days.length}, minmax(34px, 1fr))`
     : `56px repeat(${days.length}, minmax(128px, 1fr))`;
+  // Non-compact grids can be wider than a phone; allow horizontal scrolling with
+  // a sensible minimum so day columns keep a usable width instead of collapsing.
+  const minWidth = compact ? undefined : `${56 + days.length * 128}px`;
   const hours = React.useMemo(
     () => buildHourTicks(startMillis, endMillis),
     [endMillis, startMillis],
@@ -91,16 +94,17 @@ export function WeekGrid({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-md border bg-background",
-        compact && "rounded-sm text-[8px]",
+        "rounded-md border bg-background",
+        compact ? "overflow-hidden rounded-sm text-[8px]" : "overflow-x-auto",
         className,
       )}
     >
+      <div style={{ minWidth }}>
       <div
         className="grid border-b bg-muted/50"
         style={{ gridTemplateColumns }}
       >
-        <div />
+        <div className={cn(!compact && "sticky left-0 z-40 bg-muted/50")} />
         {days.map((day) => (
           <div
             key={day}
@@ -115,7 +119,13 @@ export function WeekGrid({
       </div>
 
       <div className="grid" style={{ gridTemplateColumns }}>
-        <div className="relative bg-muted/20" style={{ height }}>
+        <div
+          className={cn(
+            "relative bg-muted/20",
+            !compact && "sticky left-0 z-40",
+          )}
+          style={{ height }}
+        >
           {hours.map((hour) => (
             <div
               key={hour}
@@ -249,6 +259,7 @@ export function WeekGrid({
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );

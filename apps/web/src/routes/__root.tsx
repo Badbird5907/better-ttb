@@ -6,6 +6,7 @@ import {
   createRootRoute,
 } from "@tanstack/react-router";
 
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import appCss from "../styles/app.css?url";
 
 export const Route = createRootRoute({
@@ -20,6 +21,7 @@ export const Route = createRootRoute({
       },
     ],
     links: [{ rel: "stylesheet", href: appCss }],
+    scripts: [{ children: THEME_INIT_SCRIPT }],
   }),
   component: RootComponent,
 });

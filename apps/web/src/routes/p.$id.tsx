@@ -3,6 +3,7 @@ import type { Course } from "@better-ttb/shared";
 import { CalendarDays, Import, Layers, MapIcon } from "lucide-react";
 import * as React from "react";
 
+import { ThemeToggle } from "@/components/theme-toggle";
 import { WeekGrid } from "@/components/timetable/WeekGrid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import { useCatalogStore } from "@/stores/catalog";
 import { type Plan, usePlanStore } from "@/stores/plan";
 
 export const Route = createFileRoute("/p/$id")({
+  head: () => ({ meta: [{ title: "Shared plan · better-ttb" }] }),
   component: SharedPlanRoute,
 });
 
@@ -125,10 +127,13 @@ function SharedPlanRoute() {
             <NavTab to="/map" label="Map" icon={<MapIcon className="size-3.5" />} />
           </nav>
         </div>
-        <Button type="button" onClick={importSharedPlan} disabled={!plan}>
-          <Import />
-          Import as new plan
-        </Button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <Button type="button" onClick={importSharedPlan} disabled={!plan}>
+            <Import />
+            Import as new plan
+          </Button>
+        </div>
       </header>
 
       <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 p-4">
