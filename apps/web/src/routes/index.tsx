@@ -17,6 +17,8 @@ import {
   parseSessionCode,
 } from "@better-ttb/shared";
 import {
+  Check,
+  ChevronsUpDown,
   Copy,
   Filter,
   Layers,
@@ -49,6 +51,10 @@ import {
   searchCourses,
 } from "@/lib/search";
 import { sanitizeHtml } from "@/lib/sanitize";
+import {
+  sectionConflictsWithPlan,
+  type PlanSelectedSection,
+} from "@/lib/timetable";
 import { cn } from "@/lib/utils";
 import { useCatalogStore } from "@/stores/catalog";
 import {
@@ -61,7 +67,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Command, CommandInput } from "@/components/ui/command";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -97,7 +110,6 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
-const NO_SELECTION = "__none__";
 const RESULT_ROW_HEIGHT = 124;
 const RESULT_OVERSCAN = 5;
 
@@ -265,6 +277,10 @@ function Home() {
   const selectedCourse = selectedCourseKey
     ? coursesByKey.get(selectedCourseKey) ?? null
     : null;
+  const planSelectedSections = React.useMemo(
+    () => collectPlanSelectedSections(activePlan, coursesByKey),
+    [activePlan, coursesByKey],
+  );
   const sessionOptions = React.useMemo(
     () =>
       mergeSessionOptions([
@@ -496,16 +512,22 @@ function Home() {
             <PlanPanel
               plan={activePlan}
               coursesByKey={coursesByKey}
+              planSelectedSections={planSelectedSections}
               className={cn(mobileTab === "pinned" ? "flex" : "hidden lg:flex")}
               onChoose={choose}
               onClearChoice={clearChoice}
               onUnpin={unpinCourse}
+              onOpenCourse={(pinned) =>
+                setSelectedCourseKey(pinnedKey(pinned))
+              }
             />
           </div>
         )}
 
         <CourseDetailSheet
           course={selectedCourse}
+          activePlan={activePlan}
+          planSelectedSections={planSelectedSections}
           refreshError={refreshError}
           refreshing={selectedCourseKey === refreshingCourseKey}
           pinned={
@@ -513,6 +535,8 @@ function Home() {
               ? isCoursePinned(activePlan, selectedCourse.code, selectedCourse.sectionCode)
               : false
           }
+          onChoose={choose}
+          onClearChoice={clearChoice}
           onOpenChange={(open) => {
             if (!open) {
               setSelectedCourseKey(null);
@@ -1176,13 +1200,16 @@ function CourseResultRow({
 function PlanPanel({
   plan,
   coursesByKey,
+  planSelectedSections,
   className,
   onChoose,
   onClearChoice,
   onUnpin,
+  onOpenCourse,
 }: {
   plan: Plan;
   coursesByKey: Map<string, Course>;
+  planSelectedSections: readonly PlanSelectedSection[];
   className?: string;
   onChoose: (
     courseCode: string,
@@ -1196,6 +1223,7 @@ function PlanPanel({
     teachMethod: TeachMethod,
   ) => void;
   onUnpin: (courseCode: string, sectionCode: SectionCode) => void;
+  onOpenCourse: (pinned: PinnedCourse) => void;
 }) {
   const conflictKeys = React.useMemo(
     () => detectPlanConflictKeys(plan, coursesByKey),
@@ -1242,9 +1270,11 @@ function PlanPanel({
                 pinned={pinned}
                 course={coursesByKey.get(pinnedKey(pinned)) ?? null}
                 conflictKeys={conflictKeys}
+                planSelectedSections={planSelectedSections}
                 onChoose={onChoose}
                 onClearChoice={onClearChoice}
                 onUnpin={onUnpin}
+                onOpenCourse={onOpenCourse}
               />
             ))}
           </div>
@@ -1258,13 +1288,16 @@ function PinnedCourseCard({
   pinned,
   course,
   conflictKeys,
+  planSelectedSections,
   onChoose,
   onClearChoice,
   onUnpin,
+  onOpenCourse,
 }: {
   pinned: PinnedCourse;
   course: Course | null;
   conflictKeys: Set<string>;
+  planSelectedSections: readonly PlanSelectedSection[];
   onChoose: (
     courseCode: string,
     sectionCode: SectionCode,
@@ -1277,25 +1310,34 @@ function PinnedCourseCard({
     teachMethod: TeachMethod,
   ) => void;
   onUnpin: (courseCode: string, sectionCode: SectionCode) => void;
+  onOpenCourse: (pinned: PinnedCourse) => void;
 }) {
   const teachMethods = course ? getTeachMethods(course.sections) : [];
+  const courseKeyValue = pinnedKey(pinned);
 
   return (
     <Card className="gap-4 rounded-md py-4 shadow-xs">
       <CardHeader className="grid-cols-[minmax(0,1fr)_auto] gap-3 px-4">
-        <div className="min-w-0 space-y-1">
-          <CardTitle className="truncate text-sm">
+        <button
+          type="button"
+          className="min-w-0 space-y-1 text-left"
+          onClick={() => onOpenCourse(pinned)}
+        >
+          <CardTitle className="truncate text-sm hover:underline">
             {pinned.courseCode} <SectionBadge sectionCode={pinned.sectionCode} />
           </CardTitle>
           <p className="truncate text-xs text-muted-foreground">
             {course?.name ?? "Not found in loaded catalog"}
           </p>
-        </div>
+        </button>
         <Button
           type="button"
           variant="ghost"
           size="icon-xs"
-          onClick={() => onUnpin(pinned.courseCode, pinned.sectionCode)}
+          onClick={(event) => {
+            event.stopPropagation();
+            onUnpin(pinned.courseCode, pinned.sectionCode);
+          }}
         >
           <X />
           <span className="sr-only">Unpin</span>
@@ -1315,6 +1357,9 @@ function PinnedCourseCard({
               ? selectedConflictKey(pinned, selectedSection)
               : null;
             const hasConflict = conflictKey ? conflictKeys.has(conflictKey) : false;
+            const sections = course.sections.filter(
+              (section) => section.teachMethod === teachMethod,
+            );
 
             return (
               <div key={teachMethod} className="space-y-1.5">
@@ -1324,59 +1369,39 @@ function PinnedCourseCard({
                     <span className="text-destructive">Conflict</span>
                   )}
                 </div>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div>
-                      <Select
-                        value={selected ?? NO_SELECTION}
-                        onValueChange={(value) => {
-                          if (value === NO_SELECTION) {
-                            onClearChoice(
-                              pinned.courseCode,
-                              pinned.sectionCode,
-                              teachMethod,
-                            );
-                            return;
-                          }
-
-                          onChoose(
-                            pinned.courseCode,
-                            pinned.sectionCode,
-                            teachMethod,
-                            value,
-                          );
-                        }}
-                      >
-                        <SelectTrigger
-                          className={cn(
-                            "h-auto min-h-9 w-full whitespace-normal text-left",
-                            hasConflict &&
-                              "border-destructive text-destructive ring-destructive/20",
-                          )}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="max-w-[380px]">
-                          <SelectItem value={NO_SELECTION}>Auto — let generator choose</SelectItem>
-                          {course.sections
-                            .filter((section) => section.teachMethod === teachMethod)
-                            .map((section) => (
-                              <SelectItem
-                                key={section.name}
-                                value={section.name}
-                                disabled={section.cancelInd === "Y"}
-                              >
-                                {formatSectionOption(section)}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </TooltipTrigger>
-                  {hasConflict && (
-                    <TooltipContent>Overlaps another chosen section</TooltipContent>
-                  )}
-                </Tooltip>
+                <SectionCombobox
+                  sections={sections}
+                  value={selected}
+                  hasConflict={hasConflict}
+                  conflictOf={(section) =>
+                    // Compare against the whole plan, including this course's
+                    // OTHER teach-method choices (a TUT can clash with your own
+                    // chosen LEC) — but never against this method's own slot.
+                    sectionConflictsWithPlan(
+                      section,
+                      pinned.sectionCode,
+                      "",
+                      planSelectedSections.filter(
+                        (entry) =>
+                          !(
+                            entry.courseKey === courseKeyValue &&
+                            entry.teachMethod === teachMethod
+                          ),
+                      ),
+                    )
+                  }
+                  onChoose={(sectionName) =>
+                    onChoose(
+                      pinned.courseCode,
+                      pinned.sectionCode,
+                      teachMethod,
+                      sectionName,
+                    )
+                  }
+                  onClear={() =>
+                    onClearChoice(pinned.courseCode, pinned.sectionCode, teachMethod)
+                  }
+                />
               </div>
             );
           })}
@@ -1386,33 +1411,163 @@ function PinnedCourseCard({
   );
 }
 
+function SectionCombobox({
+  sections,
+  value,
+  hasConflict,
+  conflictOf,
+  onChoose,
+  onClear,
+}: {
+  sections: readonly Section[];
+  value: string | null;
+  hasConflict: boolean;
+  conflictOf: (section: Section) => PlanSelectedSection | null;
+  onChoose: (sectionName: string) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const selectedSection = value
+    ? sections.find((section) => section.name === value) ?? null
+    : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            "h-auto min-h-9 w-full justify-between whitespace-normal py-2 text-left font-normal",
+            hasConflict &&
+              "border-destructive text-destructive ring-destructive/20",
+          )}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {selectedSection
+              ? formatSectionOption(selectedSection)
+              : "Auto — let generator choose"}
+          </span>
+          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-[var(--radix-popover-trigger-width)] min-w-[280px] p-0"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <Command>
+          <CommandInput placeholder="Filter sections..." />
+          <CommandList>
+            <CommandEmpty>No sections match.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="__auto__ Auto let generator choose"
+                onSelect={() => {
+                  onClear();
+                  setOpen(false);
+                }}
+              >
+                <Check
+                  className={cn(
+                    "mr-2 size-4",
+                    value ? "opacity-0" : "opacity-100",
+                  )}
+                />
+                Auto — let generator choose
+              </CommandItem>
+              {sections.map((section) => {
+                const cancelled = section.cancelInd === "Y";
+                const conflict = cancelled ? null : conflictOf(section);
+
+                return (
+                  <CommandItem
+                    key={section.name}
+                    value={`${section.name} ${formatSectionOption(section)}`}
+                    disabled={cancelled}
+                    onSelect={() => {
+                      onChoose(section.name);
+                      setOpen(false);
+                    }}
+                    className={cn(conflict && "text-destructive")}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 size-4",
+                        value === section.name ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                    <span className="min-w-0 flex-1">
+                      {formatSectionOption(section)}
+                      {conflict && (
+                        <span className="ml-1 font-medium">(conflicts)</span>
+                      )}
+                    </span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function CourseDetailSheet({
   course,
+  activePlan,
+  planSelectedSections,
   refreshError,
   refreshing,
   pinned,
+  onChoose,
+  onClearChoice,
   onOpenChange,
   onPin,
   onUnpin,
   onRefresh,
 }: {
   course: Course | null;
+  activePlan: Plan;
+  planSelectedSections: readonly PlanSelectedSection[];
   refreshError: string | null;
   refreshing: boolean;
   pinned: boolean;
+  onChoose: (
+    courseCode: string,
+    sectionCode: SectionCode,
+    teachMethod: TeachMethod,
+    sectionName: string,
+  ) => void;
+  onClearChoice: (
+    courseCode: string,
+    sectionCode: SectionCode,
+    teachMethod: TeachMethod,
+  ) => void;
   onOpenChange: (open: boolean) => void;
   onPin: (course: Course) => void;
   onUnpin: (course: Course) => void;
   onRefresh: (course: Course) => void;
 }) {
+  const chosenForCourse = course
+    ? activePlan.pinned.find(
+        (entry) =>
+          entry.courseCode === course.code &&
+          entry.sectionCode === course.sectionCode,
+      )?.chosen ?? {}
+    : {};
   return (
     <Sheet open={course !== null} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-hidden p-0 sm:max-w-3xl">
         {course && (
           <>
-            <SheetHeader className="border-b p-5">
+            <SheetHeader className="border-b p-5 pr-14">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                <div className="min-w-0 space-y-2 pr-8 sm:pr-0">
+                <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <SheetTitle className="text-xl">{course.code}</SheetTitle>
                     <SectionBadge sectionCode={course.sectionCode} />
@@ -1453,7 +1608,13 @@ function CourseDetailSheet({
             </SheetHeader>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              <CourseDetailBody course={course} />
+              <CourseDetailBody
+                course={course}
+                chosen={chosenForCourse}
+                planSelectedSections={planSelectedSections}
+                onChoose={onChoose}
+                onClearChoice={onClearChoice}
+              />
             </div>
           </>
         )}
@@ -1462,10 +1623,32 @@ function CourseDetailSheet({
   );
 }
 
-function CourseDetailBody({ course }: { course: Course }) {
+function CourseDetailBody({
+  course,
+  chosen,
+  planSelectedSections,
+  onChoose,
+  onClearChoice,
+}: {
+  course: Course;
+  chosen: Record<TeachMethod, string | null>;
+  planSelectedSections: readonly PlanSelectedSection[];
+  onChoose: (
+    courseCode: string,
+    sectionCode: SectionCode,
+    teachMethod: TeachMethod,
+    sectionName: string,
+  ) => void;
+  onClearChoice: (
+    courseCode: string,
+    sectionCode: SectionCode,
+    teachMethod: TeachMethod,
+  ) => void;
+}) {
   const info = course.cmCourseInfo;
   const breadths = getCourseBreadthCodes(course);
   const groupedSections = groupSectionsByTeachMethod(course.sections);
+  const courseKeyValue = courseKey(course);
 
   return (
     <div className="space-y-6">
@@ -1529,9 +1712,10 @@ function CourseDetailBody({ course }: { course: Course }) {
               {teachMethod}
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
+              <table className="w-full min-w-[820px] text-sm">
                 <thead className="bg-muted/30 text-xs text-muted-foreground">
                   <tr>
+                    <th className="w-10 px-3 py-2 text-left font-medium">Pin</th>
                     <th className="px-3 py-2 text-left font-medium">Section</th>
                     <th className="px-3 py-2 text-left font-medium">Meetings</th>
                     <th className="px-3 py-2 text-left font-medium">Instructor</th>
@@ -1540,9 +1724,40 @@ function CourseDetailBody({ course }: { course: Course }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {sections.map((section) => (
-                    <SectionRow key={section.name} section={section} />
-                  ))}
+                  {sections.map((section) => {
+                    const isChosen = (chosen[teachMethod] ?? null) === section.name;
+                    const conflict = sectionConflictsWithPlan(
+                      section,
+                      course.sectionCode,
+                      courseKeyValue,
+                      planSelectedSections,
+                    );
+
+                    return (
+                      <SectionRow
+                        key={section.name}
+                        section={section}
+                        chosen={isChosen}
+                        conflict={conflict}
+                        onToggle={() => {
+                          if (isChosen) {
+                            onClearChoice(
+                              course.code,
+                              course.sectionCode,
+                              teachMethod,
+                            );
+                          } else {
+                            onChoose(
+                              course.code,
+                              course.sectionCode,
+                              teachMethod,
+                              section.name,
+                            );
+                          }
+                        }}
+                      />
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1577,12 +1792,59 @@ function RequirementBlock({
   );
 }
 
-function SectionRow({ section }: { section: Section }) {
+function SectionRow({
+  section,
+  chosen,
+  conflict,
+  onToggle,
+}: {
+  section: Section;
+  chosen: boolean;
+  conflict: PlanSelectedSection | null;
+  onToggle: () => void;
+}) {
   const cancelled = section.cancelInd === "Y";
 
   return (
-    <tr className={cn("border-t", cancelled && "text-muted-foreground line-through")}>
-      <td className="px-3 py-3 align-top font-medium">{section.name}</td>
+    <tr
+      className={cn(
+        "border-t",
+        cancelled && "text-muted-foreground line-through",
+        chosen && "bg-primary/5",
+        conflict && !chosen && "bg-destructive/5",
+      )}
+    >
+      <td className="px-3 py-3 align-top">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant={chosen ? "secondary" : "ghost"}
+              size="icon-xs"
+              disabled={cancelled}
+              onClick={onToggle}
+            >
+              {chosen ? <PinOff /> : <Pin />}
+              <span className="sr-only">
+                {chosen ? "Clear choice (back to Auto)" : "Pin this section"}
+              </span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {chosen ? "Clear choice — back to Auto" : "Pin course and choose this section"}
+          </TooltipContent>
+        </Tooltip>
+      </td>
+      <td className="px-3 py-3 align-top font-medium">
+        <div className="space-y-1">
+          <span>{section.name}</span>
+          {conflict && (
+            <div className="text-xs font-normal text-destructive no-underline">
+              Conflicts with {conflict.courseCode} {conflict.section.name}
+            </div>
+          )}
+        </div>
+      </td>
       <td className="max-w-[280px] px-3 py-3 align-top">
         {section.meetingTimes.length > 0 ? (
           <div className="space-y-1">
@@ -1864,9 +2126,19 @@ function sectionCodeLabel(sectionCode: SectionCode): string {
   return "Year";
 }
 
+const BREADTH_NAMES: Record<string, string> = {
+  "1": "Creative and Cultural Representations",
+  "2": "Thought, Belief, and Behaviour",
+  "3": "Society and Its Institutions",
+  "4": "Living Things and Their Environment",
+  "5": "The Physical and Mathematical Universes",
+};
+
 function formatBreadth(breadth: string): string {
   const match = breadth.match(/([1-5])$/);
-  return match?.[1] ? `BR ${match[1]}` : breadth;
+  if (!match?.[1]) return breadth;
+  const name = BREADTH_NAMES[match[1]];
+  return name ? `BR ${match[1]}: ${name}` : `BR ${match[1]}`;
 }
 
 function compareBreadthCodes(left: string, right: string): number {
@@ -2090,6 +2362,44 @@ function detectPlanConflictKeys(
   });
 
   return conflictKeys;
+}
+
+function collectPlanSelectedSections(
+  plan: Plan,
+  coursesByKey: Map<string, Course>,
+): PlanSelectedSection[] {
+  return plan.pinned.flatMap((pinned) => {
+    const course = coursesByKey.get(pinnedKey(pinned));
+
+    if (!course) {
+      return [];
+    }
+
+    return Object.entries(pinned.chosen).flatMap(([teachMethod, sectionName]) => {
+      if (!sectionName) {
+        return [];
+      }
+
+      const section = course.sections.find(
+        (candidate) =>
+          candidate.teachMethod === teachMethod && candidate.name === sectionName,
+      );
+
+      if (!section) {
+        return [];
+      }
+
+      return [
+        {
+          courseKey: pinnedKey(pinned),
+          courseCode: pinned.courseCode,
+          sectionCode: pinned.sectionCode,
+          teachMethod: teachMethod as TeachMethod,
+          section,
+        },
+      ];
+    });
+  });
 }
 
 function sectionForTerm(section: Section, term: Term, key: string): Section {

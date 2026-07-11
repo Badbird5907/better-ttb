@@ -4,9 +4,10 @@ import type {
   DayNumber,
   MeetingTime,
   Section,
+  SectionCode,
   TeachMethod,
 } from "@better-ttb/shared";
-import { parseSessionCode } from "@better-ttb/shared";
+import { meetingTimesOverlap, parseSessionCode } from "@better-ttb/shared";
 
 import type { PinnedCourse, Plan } from "@/stores/plan";
 
@@ -317,6 +318,63 @@ export function activeMeetingsForTerm(section: Section, term: Term): MeetingTime
       meeting.end.millisofday > meeting.start.millisofday &&
       meetingAppliesToTerm(meeting, term),
   );
+}
+
+/**
+ * A single chosen section belonging to the current plan, expressed with just
+ * the fields the conflict helper needs. `courseKey` identifies the owning
+ * pinned course so callers can skip comparing a section against its own course.
+ */
+export interface PlanSelectedSection {
+  courseKey: string;
+  courseCode: string;
+  sectionCode: SectionCode;
+  teachMethod: TeachMethod;
+  section: Section;
+}
+
+/**
+ * Pure conflict check for a single section against the rest of the plan.
+ *
+ * Returns the first already-selected section (from a course other than
+ * `courseKeyToSkip`) whose meeting times overlap `candidate` in a shared term,
+ * or `null` when there is no conflict. Term logic mirrors the generator: an F
+ * course and an S course never conflict, while a Y course is compared in both
+ * terms.
+ */
+export function sectionConflictsWithPlan(
+  candidate: Section,
+  sectionCode: SectionCode,
+  courseKeyToSkip: string,
+  selected: readonly PlanSelectedSection[],
+): PlanSelectedSection | null {
+  for (const other of selected) {
+    if (other.courseKey === courseKeyToSkip) {
+      continue;
+    }
+
+    for (const term of ["fall", "winter"] as const) {
+      if (
+        !courseAppliesToTerm(sectionCode, term) ||
+        !courseAppliesToTerm(other.sectionCode, term)
+      ) {
+        continue;
+      }
+
+      const candidateMeetings = activeMeetingsForTerm(candidate, term);
+      const otherMeetings = activeMeetingsForTerm(other.section, term);
+
+      const overlaps = candidateMeetings.some((left) =>
+        otherMeetings.some((right) => meetingTimesOverlap(left, right)),
+      );
+
+      if (overlaps) {
+        return other;
+      }
+    }
+  }
+
+  return null;
 }
 
 export function totalWalkMinutes(candidate: CandidateTimetable): number {
