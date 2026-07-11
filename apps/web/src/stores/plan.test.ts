@@ -4,6 +4,7 @@ import {
   chooseSection,
   clearSectionChoice,
   createPlan,
+  migratePlanStoreState,
   pinCourse,
   renamePlan,
   unpinCourse,
@@ -31,5 +32,30 @@ describe("plan reducers", () => {
     const twice = pinCourse(once, "CSC108H1", "F");
 
     expect(twice.pinned).toHaveLength(1);
+  });
+
+  it("migrates persisted plans with generator prefs while preserving unknown prefs", () => {
+    const migrated = migratePlanStoreState(
+      {
+        plans: [
+          {
+            id: "plan-1",
+            name: "Fall",
+            sessions: ["20269"],
+            pinned: [],
+            prefs: {
+              custom: "kept",
+            },
+          },
+        ],
+        activePlanId: "plan-1",
+      },
+      1,
+    );
+
+    expect(migrated.activePlanId).toBe("plan-1");
+    expect(migrated.plans[0]?.prefs.custom).toBe("kept");
+    expect(migrated.plans[0]?.prefs.generator?.version).toBe(1);
+    expect(migrated.plans[0]?.prefs.generator?.rules.length).toBeGreaterThan(0);
   });
 });

@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TimetableRouteImport } from './routes/timetable'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PIdRouteImport } from './routes/p.$id'
 import { Route as ApiShareRouteImport } from './routes/api/share'
 import { Route as ApiReferenceDataRouteImport } from './routes/api/reference-data'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
@@ -33,6 +34,11 @@ const MapRoute = MapRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PIdRoute = PIdRouteImport.update({
+  id: '/p/$id',
+  path: '/p/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiShareRoute = ApiShareRouteImport.update({
@@ -79,6 +85,7 @@ export interface FileRoutesByFullPath {
   '/api/health': typeof ApiHealthRoute
   '/api/reference-data': typeof ApiReferenceDataRoute
   '/api/share': typeof ApiShareRouteWithChildren
+  '/p/$id': typeof PIdRoute
   '/api/admin/scrape': typeof ApiAdminScrapeRoute
   '/api/course/$code': typeof ApiCourseCodeRoute
   '/api/share/$id': typeof ApiShareIdRoute
@@ -91,6 +98,7 @@ export interface FileRoutesByTo {
   '/api/health': typeof ApiHealthRoute
   '/api/reference-data': typeof ApiReferenceDataRoute
   '/api/share': typeof ApiShareRouteWithChildren
+  '/p/$id': typeof PIdRoute
   '/api/admin/scrape': typeof ApiAdminScrapeRoute
   '/api/course/$code': typeof ApiCourseCodeRoute
   '/api/share/$id': typeof ApiShareIdRoute
@@ -104,6 +112,7 @@ export interface FileRoutesById {
   '/api/health': typeof ApiHealthRoute
   '/api/reference-data': typeof ApiReferenceDataRoute
   '/api/share': typeof ApiShareRouteWithChildren
+  '/p/$id': typeof PIdRoute
   '/api/admin/scrape': typeof ApiAdminScrapeRoute
   '/api/course/$code': typeof ApiCourseCodeRoute
   '/api/share/$id': typeof ApiShareIdRoute
@@ -118,6 +127,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/api/reference-data'
     | '/api/share'
+    | '/p/$id'
     | '/api/admin/scrape'
     | '/api/course/$code'
     | '/api/share/$id'
@@ -130,6 +140,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/api/reference-data'
     | '/api/share'
+    | '/p/$id'
     | '/api/admin/scrape'
     | '/api/course/$code'
     | '/api/share/$id'
@@ -142,6 +153,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/api/reference-data'
     | '/api/share'
+    | '/p/$id'
     | '/api/admin/scrape'
     | '/api/course/$code'
     | '/api/share/$id'
@@ -155,6 +167,7 @@ export interface RootRouteChildren {
   ApiHealthRoute: typeof ApiHealthRoute
   ApiReferenceDataRoute: typeof ApiReferenceDataRoute
   ApiShareRoute: typeof ApiShareRouteWithChildren
+  PIdRoute: typeof PIdRoute
   ApiAdminScrapeRoute: typeof ApiAdminScrapeRoute
   ApiCourseCodeRoute: typeof ApiCourseCodeRoute
 }
@@ -180,6 +193,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/p/$id': {
+      id: '/p/$id'
+      path: '/p/$id'
+      fullPath: '/p/$id'
+      preLoaderRoute: typeof PIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/share': {
@@ -254,6 +274,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiHealthRoute: ApiHealthRoute,
   ApiReferenceDataRoute: ApiReferenceDataRoute,
   ApiShareRoute: ApiShareRouteWithChildren,
+  PIdRoute: PIdRoute,
   ApiAdminScrapeRoute: ApiAdminScrapeRoute,
   ApiCourseCodeRoute: ApiCourseCodeRoute,
 }

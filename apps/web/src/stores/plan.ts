@@ -1,10 +1,25 @@
+import { DEFAULT_RULES, type RuleConfig } from "@better-ttb/generator";
 import type { SectionCode, TeachMethod } from "@better-ttb/shared";
 import { FALL_2026, WINTER_2027, YEAR } from "@better-ttb/shared";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export const PLAN_STORAGE_KEY = "better-ttb:plans:v1";
+export const PLAN_STORAGE_VERSION = 2;
 export const DEFAULT_PLAN_SESSIONS = [FALL_2026, WINTER_2027, YEAR];
+
+export type GeneratorSortKey = "score" | "walking" | "earliest-start" | "days-on-campus";
+
+export interface GeneratorPrefs {
+  version: 1;
+  rules: RuleConfig[];
+  lockedCourseKeys: string[];
+  sort: GeneratorSortKey;
+}
+
+export interface PlanPrefs extends Record<string, unknown> {
+  generator?: GeneratorPrefs;
+}
 
 export interface PinnedCourse {
   courseCode: string;
@@ -17,7 +32,7 @@ export interface Plan {
   name: string;
   sessions: string[];
   pinned: PinnedCourse[];
-  prefs: Record<string, unknown>;
+  prefs: PlanPrefs;
 }
 
 interface PersistedPlanState {
@@ -45,6 +60,11 @@ interface PlanActions {
   newPlan: (sessions?: string[]) => void;
   deletePlan: (planId: string) => void;
   duplicatePlan: (planId: string) => void;
+  importPlan: (plan: Plan, name?: string) => string;
+  updatePlanPrefs: (
+    planId: string,
+    updater: (prefs: PlanPrefs, plan: Plan) => PlanPrefs,
+  ) => void;
 }
 
 export type PlanStore = PersistedPlanState & PlanActions;
@@ -107,14 +127,32 @@ export const usePlanStore = create<PlanStore>()(
         set((state) => deletePlanFromState(state, planId)),
       duplicatePlan: (planId) =>
         set((state) => duplicatePlanInState(state, planId)),
+      importPlan: (plan, name) => {
+        const imported = normalizeImportedPlan(plan, name);
+
+        set((state) => ({
+          plans: [...state.plans, imported],
+          activePlanId: imported.id,
+        }));
+
+        return imported.id;
+      },
+      updatePlanPrefs: (planId, updater) =>
+        set((state) => ({
+          plans: updatePlan(state.plans, planId, (plan) => ({
+            ...plan,
+            prefs: updater(plan.prefs, plan),
+          })),
+        })),
     }),
     {
       name: PLAN_STORAGE_KEY,
-      version: 1,
+      version: PLAN_STORAGE_VERSION,
       partialize: (state) => ({
         plans: state.plans,
         activePlanId: state.activePlanId,
       }),
+      migrate: (persisted, version) => migratePlanStoreState(persisted, version),
     },
   ),
 );
@@ -134,7 +172,22 @@ export function createPlan(name: string, sessions = DEFAULT_PLAN_SESSIONS): Plan
     name,
     sessions: normalizeSessions(sessions),
     pinned: [],
-    prefs: {},
+    prefs: createDefaultPlanPrefs(),
+  };
+}
+
+export function createDefaultPlanPrefs(): PlanPrefs {
+  return {
+    generator: createDefaultGeneratorPrefs(),
+  };
+}
+
+export function createDefaultGeneratorPrefs(): GeneratorPrefs {
+  return {
+    version: 1,
+    rules: cloneRules(DEFAULT_RULES),
+    lockedCourseKeys: [],
+    sort: "score",
   };
 }
 
@@ -238,6 +291,33 @@ export function activePlanFromState(state: PersistedPlanState): Plan {
   return state.plans.find((plan) => plan.id === state.activePlanId) ?? state.plans[0]!;
 }
 
+export function migratePlanStoreState(
+  persisted: unknown,
+  _version: number,
+): PersistedPlanState {
+  if (!isRecord(persisted)) {
+    return createInitialPlanState();
+  }
+
+  const rawPlans = Array.isArray(persisted.plans) ? persisted.plans : [];
+  const plans = rawPlans.map(normalizePlan).filter((plan): plan is Plan => Boolean(plan));
+
+  if (plans.length === 0) {
+    return createInitialPlanState();
+  }
+
+  const activePlanId =
+    typeof persisted.activePlanId === "string" &&
+    plans.some((plan) => plan.id === persisted.activePlanId)
+      ? persisted.activePlanId
+      : plans[0]!.id;
+
+  return {
+    plans,
+    activePlanId,
+  };
+}
+
 function updatePlan(
   plans: readonly Plan[],
   planId: string,
@@ -291,6 +371,131 @@ function duplicatePlanInState(
   };
 }
 
+function normalizeImportedPlan(plan: Plan, name: string | undefined): Plan {
+  return {
+    ...normalizePlan(plan)!,
+    id: createId(),
+    name: normalizePlanName(name ?? plan.name),
+  };
+}
+
+function normalizePlan(value: unknown): Plan | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = typeof value.id === "string" && value.id ? value.id : createId();
+  const name =
+    typeof value.name === "string" && value.name.trim()
+      ? normalizePlanName(value.name)
+      : "Imported Plan";
+  const sessions = Array.isArray(value.sessions)
+    ? normalizeSessions(value.sessions.filter((session): session is string => typeof session === "string"))
+    : DEFAULT_PLAN_SESSIONS;
+  const pinned = Array.isArray(value.pinned)
+    ? value.pinned.map(normalizePinnedCourse).filter((entry): entry is PinnedCourse => Boolean(entry))
+    : [];
+  const prefs = normalizePlanPrefs(value.prefs);
+
+  return {
+    id,
+    name,
+    sessions,
+    pinned,
+    prefs,
+  };
+}
+
+function normalizePinnedCourse(value: unknown): PinnedCourse | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (
+    typeof value.courseCode !== "string" ||
+    !isSectionCode(value.sectionCode) ||
+    !isRecord(value.chosen)
+  ) {
+    return null;
+  }
+
+  const chosen: Record<TeachMethod, string | null> = {};
+
+  Object.entries(value.chosen).forEach(([teachMethod, sectionName]) => {
+    if (typeof sectionName === "string" || sectionName === null) {
+      chosen[teachMethod] = sectionName;
+    }
+  });
+
+  return {
+    courseCode: value.courseCode,
+    sectionCode: value.sectionCode,
+    chosen,
+  };
+}
+
+function normalizePlanPrefs(value: unknown): PlanPrefs {
+  const base: PlanPrefs = isRecord(value) ? { ...value } : {};
+  const generator = normalizeGeneratorPrefs(base.generator);
+
+  return {
+    ...base,
+    generator,
+  };
+}
+
+function normalizeGeneratorPrefs(value: unknown): GeneratorPrefs {
+  if (!isRecord(value)) {
+    return createDefaultGeneratorPrefs();
+  }
+
+  const rules = Array.isArray(value.rules)
+    ? value.rules.filter(isRuleConfig)
+    : createDefaultGeneratorPrefs().rules;
+  const lockedCourseKeys = Array.isArray(value.lockedCourseKeys)
+    ? value.lockedCourseKeys.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  const sort = isGeneratorSortKey(value.sort) ? value.sort : "score";
+
+  return {
+    version: 1,
+    rules: rules.length > 0 ? cloneRules(rules) : createDefaultGeneratorPrefs().rules,
+    lockedCourseKeys,
+    sort,
+  };
+}
+
+function cloneRules(rules: readonly RuleConfig[]): RuleConfig[] {
+  return rules.map((rule) => ({ ...rule })) as RuleConfig[];
+}
+
+function isRuleConfig(value: unknown): value is RuleConfig {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.kind === "string" &&
+    (value.mode === "hard" || value.mode === "soft") &&
+    typeof value.weight === "number"
+  );
+}
+
+function isGeneratorSortKey(value: unknown): value is GeneratorSortKey {
+  return (
+    value === "score" ||
+    value === "walking" ||
+    value === "earliest-start" ||
+    value === "days-on-campus"
+  );
+}
+
+function isSectionCode(value: unknown): value is SectionCode {
+  return value === "F" || value === "S" || value === "Y";
+}
+
+function normalizePlanName(name: string): string {
+  return name.trim() || "Imported Plan";
+}
+
 function findPinnedCourse(
   plan: Plan,
   courseCode: string,
@@ -321,6 +526,10 @@ function normalizeSessions(sessions: readonly string[]): string[] {
     .filter((session) => session.length > 0);
 
   return normalized.length > 0 ? normalized : DEFAULT_PLAN_SESSIONS;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function createId(): string {
