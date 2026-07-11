@@ -1,24 +1,34 @@
+import { fileURLToPath, URL } from "node:url";
+
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
 import viteReact from "@vitejs/plugin-react";
 import alchemy from "alchemy/cloudflare/tanstack-start";
 import { defineConfig } from "vite";
-import tsConfigPaths from "vite-tsconfig-paths";
 
 const alchemyPlugins = process.env.ALCHEMY_ROOT ? [alchemy()] : [];
 
-export default defineConfig({
-  build: {
-    target: "esnext",
-    rollupOptions: {
-      external: ["node:async_hooks", "cloudflare:workers"],
+export default defineConfig(({ command }) => {
+  const localCloudflareAlias =
+    command === "serve" && !process.env.ALCHEMY_ROOT
+      ? {
+          "cloudflare:workers": fileURLToPath(
+            new URL("./src/server/local-cloudflare.ts", import.meta.url),
+          ),
+        }
+      : {};
+
+  return {
+    resolve: {
+      alias: localCloudflareAlias,
+      tsconfigPaths: true,
     },
-  },
-  plugins: [
-    ...alchemyPlugins,
-    tsConfigPaths({ projects: ["./tsconfig.json"] }),
-    tanstackStart(),
-    viteReact(),
-    tailwindcss(),
-  ],
+    build: {
+      target: "esnext",
+      rollupOptions: {
+        external: ["node:async_hooks", "cloudflare:workers"],
+      },
+    },
+    plugins: [...alchemyPlugins, tanstackStart(), viteReact(), tailwindcss()],
+  };
 });

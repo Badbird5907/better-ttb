@@ -7,6 +7,9 @@
       "@cloudflare/workers-types"
     ],
     "paths": {
+      "@better-ttb/generator": [
+        "../../packages/generator/src/index.ts"
+      ],
       "@/*": [
         "./src/*"
       ],

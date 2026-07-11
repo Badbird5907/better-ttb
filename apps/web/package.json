@@ -11,6 +11,7 @@
     "deploy": "tsx ../../alchemy.run.ts"
   },
   "dependencies": {
+    "@better-ttb/generator": "0.0.0",
     "@better-ttb/shared": "0.0.0",
     "@radix-ui/react-dialog": "^1.1.19",
     "@radix-ui/react-popover": "^1.1.19",
