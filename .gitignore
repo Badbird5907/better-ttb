@@ -1,0 +1,13 @@
+node_modules/
+.codex-logs/
+dist/
+.turbo/
+.alchemy/
+.env
+.env.*
+!.env.example
+.vinxi/
+.output/
+.wrangler/
+coverage/
+*.tsbuildinfo

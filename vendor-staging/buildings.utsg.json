@@ -1,0 +1,1532 @@
+[
+  {
+    "code": "AB",
+    "name": "Astronomy & Astrophysics Building",
+    "shortName": "Astronomy",
+    "address": "50 St. George Street, Toronto",
+    "lat": 43.66066,
+    "lng": -79.39734,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "AD",
+    "name": "Enrolment Services",
+    "shortName": "Enrol Serv",
+    "address": "172 St. George Street, Toronto",
+    "lat": 43.668115116811045,
+    "lng": -79.4004587910461,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "AH",
+    "name": "Muzzo Family Alumni Hall",
+    "shortName": "Alumni Hall",
+    "address": "121 St. Joseph Street, Toronto",
+    "lat": 43.66479198160499,
+    "lng": -79.3901463679361,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "AN",
+    "name": "Annesley Hall",
+    "shortName": "Annesley",
+    "address": "95 Queen's Park, Toronto",
+    "lat": 43.667773159088526,
+    "lng": -79.3929559818792,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "AP",
+    "name": "Anthropology Building",
+    "shortName": "Anthropology",
+    "address": "19 Russell Street, Toronto",
+    "lat": 43.65987169638199,
+    "lng": -79.398449816494,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "BA",
+    "name": "Bahen Centre for Information Technology",
+    "shortName": "Bahen Centre",
+    "address": "40 St. George Street, Toronto",
+    "lat": 43.65966794914353,
+    "lng": -79.397374250679,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "BC",
+    "name": "Birge-Carnegie Library",
+    "shortName": "Birge-Carneg",
+    "address": "75a Queen's Park, Toronto",
+    "lat": 43.667112520421476,
+    "lng": -79.3929600051927,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "BF",
+    "name": "Bancroft Building",
+    "shortName": "Bancroft Bld",
+    "address": "4 Bancroft Avenue, Toronto",
+    "lat": 43.66093068564293,
+    "lng": -79.3997245363283,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "BH",
+    "name": "Founders House",
+    "shortName": "Founders",
+    "address": "1 Elmsley Place, Toronto",
+    "lat": 43.66550988363074,
+    "lng": -79.3893537751722,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "BI",
+    "name": "Banting Institute",
+    "shortName": "Banting Inst",
+    "address": "100 College Street, Toronto",
+    "lat": 43.660492150860854,
+    "lng": -79.388589345603,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "BK",
+    "name": "Back Campus Fields",
+    "shortName": "Back Campus",
+    "address": "20 Tower Road, Toronto",
+    "lat": 43.66386,
+    "lng": -79.39636,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "BL",
+    "name": "Claude T. Bissell Building",
+    "shortName": "Bissell Bldg",
+    "address": "140 St. George Street, Toronto",
+    "lat": 43.66502918130166,
+    "lng": -79.3992973945427,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "BN",
+    "name": "Clara Benson Building",
+    "shortName": "Clara Benson",
+    "address": "320 Huron Street, Toronto",
+    "lat": 43.662942859315585,
+    "lng": -79.400203310637,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "BR",
+    "name": "Brennan Hall",
+    "shortName": "Brennan Hall",
+    "address": "81 St. Mary Street, Toronto",
+    "lat": 43.666364563794566,
+    "lng": -79.389863394885,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "BS",
+    "name": "St. Basil's Church",
+    "shortName": "Basil Church",
+    "address": "50 St. Joseph Street, Toronto",
+    "lat": 43.66632284869429,
+    "lng": -79.3891700438547,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "BT",
+    "name": "Isabel Bader Theatre",
+    "shortName": "BaderTheatre",
+    "address": "93 Charles St. West, Toronto",
+    "lat": 43.66723281346622,
+    "lng": -79.3924530676889,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "BW",
+    "name": "Burwash Hall",
+    "shortName": "Burwash Hall",
+    "address": "89 Charles Street West, Toronto",
+    "lat": 43.667438475209295,
+    "lng": -79.391794585375,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CA",
+    "name": "Huron Street-370",
+    "shortName": "Huron St-370",
+    "address": "370 Huron Street, Toronto",
+    "lat": 43.664574183994326,
+    "lng": -79.4006867788124,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CB",
+    "name": "Best Institute",
+    "shortName": "Best Inst.",
+    "address": "112 College St, Toronto",
+    "lat": 43.66036990387816,
+    "lng": -79.3892867199468,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CD",
+    "name": "Spadina Road-56",
+    "shortName": "SpadinaRd-56",
+    "address": "56 Spadina Road, Toronto",
+    "lat": 43.66967,
+    "lng": -79.40534,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CE",
+    "name": "Centre for Engineering Innovation and Entrepreneurship (Under Construction)",
+    "shortName": "",
+    "address": "55 St. George Street, Toronto",
+    "lat": 43.66079,
+    "lng": -79.39657,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CG",
+    "name": "Canadiana Gallery",
+    "shortName": "Canadiana",
+    "address": "14 Queen's Park Crescent West, Toronto",
+    "lat": 43.66191543670893,
+    "lng": -79.392918430953,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CH",
+    "name": "Convocation Hall",
+    "shortName": "Con Hall",
+    "address": "31 King's College Circle, Toronto",
+    "lat": 43.66077496731175,
+    "lng": -79.3953880749035,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CM",
+    "name": "230 College Street",
+    "shortName": "230 College",
+    "address": "230 College Street, Toronto",
+    "lat": 43.658682190974226,
+    "lng": -79.397913374691,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CN",
+    "name": "Chestnut Residence and Conference Centre",
+    "shortName": "Chestnut-89",
+    "address": "89 Chestnut Street, Toronto",
+    "lat": 43.654308663892664,
+    "lng": -79.3853586248445,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CO",
+    "name": "St. George Street-162",
+    "shortName": "St.George-162",
+    "address": "162 St. George Street, Toronto",
+    "lat": 43.66711,
+    "lng": -79.40004,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CR",
+    "name": "Carr Hall",
+    "shortName": "Carr Hall",
+    "address": "100 St. Joseph Street, Toronto",
+    "lat": 43.66522854467064,
+    "lng": -79.3905057839441,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CS",
+    "name": "School of Continuing Studies",
+    "shortName": "SCS",
+    "address": "158 St. George Street, Toronto",
+    "lat": 43.666704589426224,
+    "lng": -79.3999210081386,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CU",
+    "name": "Cumberland House",
+    "shortName": "Cumberland",
+    "address": "33 St. George Street, Toronto",
+    "lat": 43.65946129055228,
+    "lng": -79.3958963535118,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CX",
+    "name": "College Street - 245",
+    "shortName": "College St-245",
+    "address": "245 College Street, Toronto",
+    "lat": 43.65893,
+    "lng": -79.39355,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "CZ",
+    "name": "College Street-229",
+    "shortName": "College-229",
+    "address": "229 College Street, Toronto",
+    "lat": 43.65816,
+    "lng": -79.39745,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "DA",
+    "name": "Daniels Building",
+    "shortName": "Daniels",
+    "address": "1 Spadina Crescent, Toronto",
+    "lat": 43.65969,
+    "lng": -79.40076,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "DC",
+    "name": "Terrence Donnelly Ctr for Cellular & Biomolecular Res",
+    "shortName": "DonnellyCCBR",
+    "address": "160 College Street, Toronto",
+    "lat": 43.66015645609399,
+    "lng": -79.3928768567133,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "DN",
+    "name": "Dentistry Building",
+    "shortName": "Dentistry",
+    "address": "124 Edward Street, Toronto",
+    "lat": 43.65627448600932,
+    "lng": -79.3871449760484,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "DR",
+    "name": "J. Robert S. Prichard Alumni House",
+    "shortName": "Prichard Hse",
+    "address": "21 King's College Circle, Toronto",
+    "lat": 43.66208716010893,
+    "lng": -79.3966601125288,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "EA",
+    "name": "Engineering Annex",
+    "shortName": "Eng Annex",
+    "address": "11 King's College Road, Toronto",
+    "lat": 43.659597122598235,
+    "lng": -79.3954148969936,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "ED",
+    "name": "Edward Street-123",
+    "shortName": "Edward-123",
+    "address": "123 Edward Street, Toronto",
+    "lat": 43.65564,
+    "lng": -79.38677,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "EH",
+    "name": "Elmsley Hall",
+    "shortName": "Elmsley",
+    "address": "81 St. Mary Street, Toronto",
+    "lat": 43.66689133569867,
+    "lng": -79.3902697495508,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "EJ",
+    "name": "Edward Johnson Building",
+    "shortName": "Edward Johns",
+    "address": "80 Queen's Park, Toronto",
+    "lat": 43.6665508262648,
+    "lng": -79.3945760361242,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "EL",
+    "name": "Electrometallurgy Lab",
+    "shortName": "Electrometal",
+    "address": "11 King's College Road (rear), Toronto",
+    "lat": 43.65946905241543,
+    "lng": -79.39529687979,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "EM",
+    "name": "Emmanuel College",
+    "shortName": "Emmanuel",
+    "address": "75 Queen's Park, Toronto",
+    "lat": 43.6667293272608,
+    "lng": -79.3928218714285,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "EP",
+    "name": "Stewart Building",
+    "shortName": "StewartBldg",
+    "address": "149 College Street, Toronto",
+    "lat": 43.65923474135822,
+    "lng": -79.3920654884863,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "ER",
+    "name": "Early Learning Centre",
+    "shortName": "Early Learn",
+    "address": "7 Glen Morris Street, Toronto",
+    "lat": 43.663909629488785,
+    "lng": -79.4011467776584,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "ES",
+    "name": "Earth Sciences Centre",
+    "shortName": "Earth Sci",
+    "address": "33 Willcocks Street, Toronto",
+    "lat": 43.661099501245644,
+    "lng": -79.399303429513,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "EX",
+    "name": "Exam Centre",
+    "shortName": "Exam Centre",
+    "address": "255 McCaul Street, Toronto",
+    "lat": 43.658476013981854,
+    "lng": -79.3928580812502,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "FA",
+    "name": "Spadina Avenue-720",
+    "shortName": "Spadina-720",
+    "address": "720 Spadina Avenue, Toronto",
+    "lat": 43.665399288509725,
+    "lng": -79.403629832654,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "FC",
+    "name": "Faculty Club",
+    "shortName": "Faculty Club",
+    "address": "41 Willcocks Street, Toronto",
+    "lat": 43.66115286242385,
+    "lng": -79.4004889658975,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "FE",
+    "name": "Bloor Street West-371",
+    "shortName": "Bloor W-371",
+    "address": "371 Bloor Street West, Toronto",
+    "lat": 43.66668130671138,
+    "lng": -79.4022290489959,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "FG",
+    "name": "FitzGerald Building",
+    "shortName": "FitzGerald",
+    "address": "150 College Street, Toronto",
+    "lat": 43.66006234490184,
+    "lng": -79.3924503854799,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "FH",
+    "name": "Falconer Hall",
+    "shortName": "Falconer Hal",
+    "address": "84 Queen's Park, Toronto",
+    "lat": 43.666688582539344,
+    "lng": -79.3939604691553,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "FI",
+    "name": "Fields Inst for Research in Math Science",
+    "shortName": "Fields Inst",
+    "address": "222 College Street, Toronto",
+    "lat": 43.65879376874734,
+    "lng": -79.3974480114269,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "FS",
+    "name": "Fisher House",
+    "shortName": "Fisher House",
+    "address": "59 Queen's Park Crescent East, Toronto",
+    "lat": 43.665461862128474,
+    "lng": -79.3908055208015,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "GA",
+    "name": "Gage Building",
+    "shortName": "Gage Bldg",
+    "address": "223 College Street, Toronto",
+    "lat": 43.65819609756056,
+    "lng": -79.3970939598369,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "GB",
+    "name": "Galbraith Building",
+    "shortName": "Galbraith",
+    "address": "35 St. George Street, Toronto",
+    "lat": 43.65988139854955,
+    "lng": -79.3961860320854,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "GC",
+    "name": "Goldring Student Centre",
+    "shortName": "Goldring Ctr",
+    "address": "150 Charles Street West, Toronto",
+    "lat": 43.66764413624914,
+    "lng": -79.3925992480802,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "GD",
+    "name": "Graduate House",
+    "shortName": "Graduate Hse",
+    "address": "60 Harbord Street, Toronto",
+    "lat": 43.663376525335316,
+    "lng": -79.4016436568784,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "GE",
+    "name": "Max Gluskin House",
+    "shortName": "Gluskin House",
+    "address": "150 St. George Street, Toronto",
+    "lat": 43.66615453296803,
+    "lng": -79.3996970436859,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "GH",
+    "name": "Gilson House",
+    "shortName": "Gilson House",
+    "address": "8 Elmsley Place, Toronto",
+    "lat": 43.66573543896801,
+    "lng": -79.3900424323368,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "GI",
+    "name": "George Ignatieff Theatre",
+    "shortName": "G Ignatieff",
+    "address": "15 Devonshire Place, Toronto",
+    "lat": 43.66581984007549,
+    "lng": -79.3971033475685,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "GM",
+    "name": "Luella Massey Studio Theatre",
+    "shortName": "Studio Thtre",
+    "address": "4 Glen Morris Street, Toronto",
+    "lat": 43.664349109423604,
+    "lng": -79.4010730169105,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "GO",
+    "name": "Goldring Centre for High Performance Sport",
+    "shortName": "GC High Perf",
+    "address": "100 Devonshire Place, Toronto",
+    "lat": 43.6672272,
+    "lng": -79.3984,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "GS",
+    "name": "School of Graduate Studies",
+    "shortName": "SGS",
+    "address": "65 St. George Street, Toronto",
+    "lat": 43.66199935813239,
+    "lng": -79.3971140764045,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "GU",
+    "name": "Graduate Students' Union",
+    "shortName": "G.S.U.",
+    "address": "16 Bancroft Avenue, Toronto",
+    "lat": 43.660826388406655,
+    "lng": -79.4002536020565,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "HA",
+    "name": "Haultain Building",
+    "shortName": "Haultain",
+    "address": "170 College Street (rear of), Toronto",
+    "lat": 43.65994252264234,
+    "lng": -79.3936352513122,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "HH",
+    "name": "Hart House",
+    "shortName": "Hart House",
+    "address": "7 Hart House Circle, Toronto",
+    "lat": 43.663700559989046,
+    "lng": -79.3945183686304,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "HI",
+    "name": "St. Hilda's College",
+    "shortName": "St. Hilda's",
+    "address": "44 Devonshire Place, Toronto",
+    "lat": 43.66572961814705,
+    "lng": -79.3978154740619,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "HS",
+    "name": "Health Sciences Building",
+    "shortName": "Health Sci",
+    "address": "155 College Street, Toronto",
+    "lat": 43.659039724201534,
+    "lng": -79.3928835622358,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "HU",
+    "name": "Huron Street-215",
+    "shortName": "Huron-215",
+    "address": "215 Huron Street, Toronto",
+    "lat": 43.659297806582664,
+    "lng": -79.3982372514295,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "IA",
+    "name": "Spadina Avenue-703",
+    "shortName": "Spadina-703",
+    "address": "703 Spadina Avenue, Toronto",
+    "lat": 43.66571797663791,
+    "lng": -79.4026488147068,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "IN",
+    "name": "Innis College",
+    "shortName": "Innis Coll",
+    "address": "2 Sussex Avenue, Toronto",
+    "lat": 43.66557148699452,
+    "lng": -79.3994838080692,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "IR",
+    "name": "St. George Street-121",
+    "shortName": "StGeorge-121",
+    "address": "121 St. George Street, Toronto",
+    "lat": 43.66668712738649,
+    "lng": -79.3991015932846,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "IS",
+    "name": "Innis College Student Residence",
+    "shortName": "Innis Resid",
+    "address": "111 St. George Street, Toronto",
+    "lat": 43.66592073316277,
+    "lng": -79.39877302268,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "JH",
+    "name": "Jackman Humanities Building",
+    "shortName": "Jackman",
+    "address": "170 St. George Street, Toronto",
+    "lat": 43.66766208308606,
+    "lng": -79.4003233394909,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "JP",
+    "name": "Wellesley Street West -90",
+    "shortName": "Wellesley-90",
+    "address": "90 Wellesley Street West, Toronto",
+    "lat": 43.66403817512182,
+    "lng": -79.3897279433298,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "KL",
+    "name": "J. M. Kelly Library",
+    "shortName": "J.M. Kelly",
+    "address": "113 St. Joseph Street, Toronto",
+    "lat": 43.6648453394831,
+    "lng": -79.3895281187582,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "KP",
+    "name": "Koffler House",
+    "shortName": "Koffler Hse",
+    "address": "569 Spadina Crescent, Toronto",
+    "lat": 43.660608576363494,
+    "lng": -79.4005882076311,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "KS",
+    "name": "Koffler Student Services Centre",
+    "shortName": "Koffler Cent",
+    "address": "214 College Street, Toronto",
+    "lat": 43.65916925066043,
+    "lng": -79.3968860886383,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "KT",
+    "name": "TWH-Krembil Discovery Tower",
+    "shortName": "TWH-Krembil",
+    "address": "399 Bathurst Street, Toronto",
+    "lat": 43.65413,
+    "lng": -79.40518,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "KX",
+    "name": "Knox College",
+    "shortName": "Knox",
+    "address": "59 St. George Street, Toronto",
+    "lat": 43.661362910842435,
+    "lng": -79.3969598493862,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "LA",
+    "name": "Gerald Larkin Building",
+    "shortName": "Larkin Bldg",
+    "address": "15 Devonshire Place, Toronto",
+    "lat": 43.66566898509376,
+    "lng": -79.3969108990717,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "LB",
+    "name": "Burwash Residence (Lower Houses)",
+    "shortName": "BurwashLower",
+    "address": "89 Charles Street West, Toronto",
+    "lat": 43.66638493638289,
+    "lng": -79.390846424489,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "LC",
+    "name": "Loretto College",
+    "shortName": "Loretto",
+    "address": "70 St. Mary Street, Toronto",
+    "lat": 43.66736183708266,
+    "lng": -79.390100770382,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "LG",
+    "name": "Fasken Martineau Building",
+    "shortName": "Martineau",
+    "address": "655 Spadina Avenue, Toronto",
+    "lat": 43.66406097393544,
+    "lng": -79.4020345888424,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "LH",
+    "name": "Charles Street West-65",
+    "shortName": "CharlesStW-65",
+    "address": "65 Charles Street West, Toronto",
+    "lat": 43.66784,
+    "lng": -79.39,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "LI",
+    "name": "Lillian Massey Building",
+    "shortName": "L Massey",
+    "address": "125 Queen's Park, Toronto",
+    "lat": 43.66834648269129,
+    "lng": -79.3936748138952,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "LM",
+    "name": "Lash Miller Chemical Laboratories",
+    "shortName": "Lash Miller",
+    "address": "80 St. George Street, Toronto",
+    "lat": 43.661397838050824,
+    "lng": -79.3978127918529,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "LW",
+    "name": "Faculty of Law",
+    "shortName": "Law",
+    "address": "78 Queen's Park, Toronto",
+    "lat": 43.66593,
+    "lng": -79.39384,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "M2",
+    "name": "MARS 2",
+    "shortName": "MARS 2",
+    "address": "661 University Avenue, ",
+    "lat": 43.65958,
+    "lng": -79.38972,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MA",
+    "name": "Massey College",
+    "shortName": "Massey Coll",
+    "address": "4 Devonshire Place, Toronto",
+    "lat": 43.66483612312723,
+    "lng": -79.3972750089454,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MB",
+    "name": "Lassonde Mining Building",
+    "shortName": "Mining",
+    "address": "170 College Street, Toronto",
+    "lat": 43.659502525205575,
+    "lng": -79.3933891586351,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MC",
+    "name": "Mechanical Engineering Building",
+    "shortName": "Mech Eng",
+    "address": "5 King's College Road, Toronto",
+    "lat": 43.65993427563183,
+    "lng": -79.3940288654852,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "ME",
+    "name": "Queen's Park Crescent East-39",
+    "shortName": "QueenPk-39",
+    "address": "39 Queen's Park Crescent East, Toronto",
+    "lat": 43.664242392753735,
+    "lng": -79.3904112360763,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MG",
+    "name": "Margaret Addison Hall",
+    "shortName": "M Addison",
+    "address": "140 Charles Street West, Toronto",
+    "lat": 43.668260145051306,
+    "lng": -79.3925187818098,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MH",
+    "name": "More House",
+    "shortName": "More House",
+    "address": "59 Queen's Park Crescent East, Toronto",
+    "lat": 43.66560059096537,
+    "lng": -79.3908631882953,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MK",
+    "name": "Munk School of Global Affairs at the Observatory",
+    "shortName": "Munk-Observ",
+    "address": "315 Bloor Street West, Toronto",
+    "lat": 43.66747000352004,
+    "lng": -79.398519553928,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "ML",
+    "name": "Queen's Park Crsc. E.-39A",
+    "shortName": "Queens Pk39A",
+    "address": "39A Queen's Park Crsc. E, Toronto",
+    "lat": 43.66431224369719,
+    "lng": -79.3898063979435,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MM",
+    "name": "Macdonald-Mowat House",
+    "shortName": "Mowat House",
+    "address": "63 St. George Street, Toronto",
+    "lat": 43.66177136333075,
+    "lng": -79.3970510444927,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MN",
+    "name": "Maritain House",
+    "shortName": "Maritain",
+    "address": "6 Elmsley Place, Toronto",
+    "lat": 43.665642306566845,
+    "lng": -79.39001963356,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MO",
+    "name": "Morrison Hall",
+    "shortName": "MorrisonHall",
+    "address": "75 St. George Street, Toronto",
+    "lat": 43.66309954213775,
+    "lng": -79.3976076028633,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MP",
+    "name": "McLennan Physical Laboratories",
+    "shortName": "McLennan Lab",
+    "address": "255 Huron Street, Toronto",
+    "lat": 43.660710933566016,
+    "lng": -79.3982714495945,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MR",
+    "name": "McMurrich Building",
+    "shortName": "McMurrich",
+    "address": "12 Queen's Park Crescent W, Toronto",
+    "lat": 43.66110823306933,
+    "lng": -79.392874174504,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MS",
+    "name": "Medical Sciences Building",
+    "shortName": "MSB",
+    "address": "1 King's College Circle, Toronto",
+    "lat": 43.660739554480855,
+    "lng": -79.3937338224935,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MU",
+    "name": "Munk School of Global Affairs - Graham Library",
+    "shortName": "Munk East",
+    "address": "5 Devonshire Place, Toronto",
+    "lat": 43.665068957024474,
+    "lng": -79.3963523290443,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "MY",
+    "name": "Myhal Centre for Engineering Innovation & Entrepreneurship",
+    "shortName": "Myhal Centre",
+    "address": "55 St. George Street, Toronto",
+    "lat": 43.660862,
+    "lng": -79.396538,
+    "source": "concept3d-2026"
+  },
+  {
+    "code": "MZ",
+    "name": "McCorkell House",
+    "shortName": "McCorkell",
+    "address": "2 Elmsley Place, Toronto",
+    "lat": 43.665433728269406,
+    "lng": -79.3898667476463,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "NB",
+    "name": "Borden Building North",
+    "shortName": "Borden North",
+    "address": "563 Spadina Crescent, Toronto",
+    "lat": 43.66041065293638,
+    "lng": -79.3999967805433,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "NF",
+    "name": "Northrop Frye Hall",
+    "shortName": "Northrop",
+    "address": "73 Queen's Park Crescent East, Toronto",
+    "lat": 43.66640821920836,
+    "lng": -79.3921821645784,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "NL",
+    "name": "C. David Naylor Building",
+    "shortName": "Naylor",
+    "address": "6 Queen's Park Crescent West, Toronto",
+    "lat": 43.660430057195335,
+    "lng": -79.3917597166586,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "NR",
+    "name": "New College III",
+    "shortName": "New Coll III",
+    "address": "45 Willcocks Street, Toronto",
+    "lat": 43.661006361670275,
+    "lng": -79.4007759622621,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "OA",
+    "name": "Old Admin Bldg (Board of Ed)",
+    "shortName": "Old Admin",
+    "address": "263 McCaul Street, Toronto",
+    "lat": 43.65880832236425,
+    "lng": -79.392504700212,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "OH",
+    "name": "Odette (Louis) Hall",
+    "shortName": "Odette Hall",
+    "address": "50 St. Joseph Street, Toronto",
+    "lat": 43.66635389249167,
+    "lng": -79.3889071873712,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "OI",
+    "name": "Ontario Institute for Studies in Education",
+    "shortName": "OISE",
+    "address": "252 Bloor Street West, Toronto",
+    "lat": 43.668277121589846,
+    "lng": -79.3984565220165,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "PB",
+    "name": "Leslie L. Dan Pharmacy Building",
+    "shortName": "Dan Pharmacy",
+    "address": "144 College Street, Toronto",
+    "lat": 43.65995853126025,
+    "lng": -79.391703390269,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "PG",
+    "name": "St. George Street-45",
+    "shortName": "St. George-45",
+    "address": "45 St. George Street, Toronto",
+    "lat": 43.66036,
+    "lng": -79.39655,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "PH",
+    "name": "Phelan House",
+    "shortName": "Phelan",
+    "address": "3 Elmsley Place, Toronto",
+    "lat": 43.66579946740982,
+    "lng": -79.3894416175174,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "PI",
+    "name": "Queen's Park Crescent East-59",
+    "shortName": "QP Cres E-59",
+    "address": "59 Queen's Park Crescent East, Toronto",
+    "lat": 43.66568790265635,
+    "lng": -79.3910388729858,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "PR",
+    "name": "E.J. Pratt Library",
+    "shortName": "Pratt Lib",
+    "address": "71 Queen's Park Crescent East, Toronto",
+    "lat": 43.66633740058605,
+    "lng": -79.3913466564703,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "PT",
+    "name": "D.L. Pratt Building",
+    "shortName": "D.L. Pratt",
+    "address": "6 King's College Road, Toronto",
+    "lat": 43.65963205070242,
+    "lng": -79.3946933827686,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "RB",
+    "name": "Thomas Fisher Rare Book Library Building",
+    "shortName": "Rare Book",
+    "address": "120 St. George Street, Toronto",
+    "lat": 43.66405418284699,
+    "lng": -79.398935296325,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "RG",
+    "name": "Regis College",
+    "shortName": "Regis",
+    "address": "100 Wellesley Street West, Toronto",
+    "lat": 43.66396347318962,
+    "lng": -79.390280478386,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "RJ",
+    "name": "Rowell Jackman Hall",
+    "shortName": "Jackman Hall",
+    "address": "85 Charles Street West, Toronto",
+    "lat": 43.66742295348751,
+    "lng": -79.3908249668169,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "RL",
+    "name": "John P. Robarts Library Building",
+    "shortName": "Robarts",
+    "address": "130 St. George Street, Toronto",
+    "lat": 43.664451945321126,
+    "lng": -79.3994502804565,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "RM",
+    "name": "McCaul Street-254/256",
+    "shortName": "McCaul-254/6",
+    "address": "254-256 McCaul Street, Toronto",
+    "lat": 43.65857109807999,
+    "lng": -79.3936037353563,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "RS",
+    "name": "Rosebrugh Building",
+    "shortName": "Rosebrugh",
+    "address": "164 College Street, Toronto",
+    "lat": 43.660054583141815,
+    "lng": -79.3932268849897,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "RT",
+    "name": "Rotman School of Management",
+    "shortName": "RotmanSchool",
+    "address": "105 St. George Street, Toronto",
+    "lat": 43.6651853735736,
+    "lng": -79.398286201744,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "RU",
+    "name": "Rehabilitation Sciences Building",
+    "shortName": "Rehab Sci",
+    "address": "500 University Avenue, Toronto",
+    "lat": 43.65545944429152,
+    "lng": -79.3891660205412,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "RW",
+    "name": "Ramsay Wright Laboratories",
+    "shortName": "RamsayWright",
+    "address": "25 Harbord Street, Toronto",
+    "lat": 43.66311506487241,
+    "lng": -79.3989849171924,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SA",
+    "name": "Spadina Ave-713",
+    "shortName": "Spadina-713",
+    "address": "713 Spadina Avenue, Toronto",
+    "lat": 43.66600901454478,
+    "lng": -79.4028446159649,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SB",
+    "name": "Borden Building South",
+    "shortName": "Borden South",
+    "address": "487 Spadina Crescent, Toronto",
+    "lat": 43.660071076909205,
+    "lng": -79.399673574357,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SC",
+    "name": "Sussex Court",
+    "shortName": "Sussex Court",
+    "address": "21 Sussex Avenue, Toronto",
+    "lat": 43.66483612316502,
+    "lng": -79.400894650011,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SCM",
+    "name": "Student Commons",
+    "shortName": "Student Commons",
+    "address": "230 College Street, Toronto",
+    "lat": 43.658752,
+    "lng": -79.397919,
+    "source": "concept3d-2026"
+  },
+  {
+    "code": "SD",
+    "name": "Sir Daniel Wilson Residence",
+    "shortName": "Sir Daniel",
+    "address": "73 St. George Street, Toronto",
+    "lat": 43.662638709096576,
+    "lng": -79.397531159906,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SF",
+    "name": "Sandford Fleming Building",
+    "shortName": "Sandford Flm",
+    "address": "10 King's College Road, Toronto",
+    "lat": 43.66012007293862,
+    "lng": -79.3951037607479,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SI",
+    "name": "Simcoe Hall",
+    "shortName": "Simcoe Hall",
+    "address": "27 King's College Circle, Toronto",
+    "lat": 43.6607633248092,
+    "lng": -79.395939268856,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SK",
+    "name": "Factor-Inwentash Faculty of Social Work",
+    "shortName": "Social Work",
+    "address": "246 Bloor Street West, Toronto",
+    "lat": 43.66829361310306,
+    "lng": -79.3977323255825,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SM",
+    "name": "Gerstein Science Information Centre in the Sigmund Samuel Library Bldg",
+    "shortName": "Sig Samuel",
+    "address": "7 and 9 King's College Circle, Toronto",
+    "lat": 43.66220455260483,
+    "lng": -79.393846475272,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SN",
+    "name": "Stephenson House",
+    "shortName": "Stephenson",
+    "address": "63 Charles Street West, Toronto",
+    "lat": 43.66783184987208,
+    "lng": -79.3899042985725,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SO",
+    "name": "Louis B. Stewart Observatory (UTSU)",
+    "shortName": "Stewart Obsv",
+    "address": "12 Hart House Circle, Toronto",
+    "lat": 43.66314611035052,
+    "lng": -79.3946799717235,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SR",
+    "name": "Sam Sorbara Hall Student Residence",
+    "shortName": "Sorbara Hall",
+    "address": "70 St. Joseph Street, Toronto",
+    "lat": 43.66575532654301,
+    "lng": -79.3890426389265,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SS",
+    "name": "Sidney Smith Hall",
+    "shortName": "Sidney Smith",
+    "address": "100 St. George Street, Toronto",
+    "lat": 43.66237579019846,
+    "lng": -79.3986617110061,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "ST",
+    "name": "Central Steam Plant",
+    "shortName": "Steam Plant",
+    "address": "17 Russell Street, Toronto",
+    "lat": 43.66002693188444,
+    "lng": -79.397744395523,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SU",
+    "name": "Sussex Avenue-40",
+    "shortName": "Sussex-40",
+    "address": "40 Sussex Avenue, Toronto",
+    "lat": 43.665012688924,
+    "lng": -79.4018119654941,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SV",
+    "name": "Sullivan House",
+    "shortName": "Sullivan",
+    "address": "96 St. Joseph Street, Toronto",
+    "lat": 43.665404624263296,
+    "lng": -79.3899807415294,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "SW",
+    "name": "Schwartz Reisman Innovation Campus West",
+    "shortName": "Schwartz Reisman West",
+    "address": "",
+    "lat": 43.660328,
+    "lng": -79.389145,
+    "source": "concept3d-2026"
+  },
+  {
+    "code": "TC",
+    "name": "Trinity College",
+    "shortName": "Trinity Coll",
+    "address": "6 Hoskin Avenue, Toronto",
+    "lat": 43.66513638156263,
+    "lng": -79.3955604068327,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "TF",
+    "name": "Teefy Hall",
+    "shortName": "Teefy Hall",
+    "address": "57 Queen's Park Crescent East, Toronto",
+    "lat": 43.665324103106094,
+    "lng": -79.3908739171314,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "TH",
+    "name": "Toronto School of Theology",
+    "shortName": "T.S.T.",
+    "address": "47 Queen's Park Crescent East, Toronto",
+    "lat": 43.66476093699955,
+    "lng": -79.3906519643354,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "TR",
+    "name": "Soldiers' Tower",
+    "shortName": "Soldiers Twr",
+    "address": "7 Hart House Circle, Toronto",
+    "lat": 43.66350992309996,
+    "lng": -79.3952164135265,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "TT",
+    "name": "Spadina Ave-455",
+    "shortName": "Spadina-455",
+    "address": "455 Spadina Avenue, Toronto",
+    "lat": 43.65820628517793,
+    "lng": -79.3997030786562,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "UB",
+    "name": "Burwash Residence (Upper Houses)",
+    "shortName": "BurwashUpper",
+    "address": "89 Charles Street West, Toronto",
+    "lat": 43.666917528661344,
+    "lng": -79.3910623423147,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "UC",
+    "name": "University College",
+    "shortName": "UC",
+    "address": "15 King's College Circle, Toronto",
+    "lat": 43.66319655917286,
+    "lng": -79.395819910554,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "UP",
+    "name": "University College Union",
+    "shortName": "UC Union",
+    "address": "79 St. George Street, Toronto",
+    "lat": 43.66338477174165,
+    "lng": -79.39746678689,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "VA",
+    "name": "Varsity Centre",
+    "shortName": "Varsity Centre",
+    "address": "299 Bloor Street West, Toronto",
+    "lat": 43.66724,
+    "lng": -79.3963,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "VC",
+    "name": "Victoria College",
+    "shortName": "Victoria",
+    "address": "91 Charles Street West, Toronto",
+    "lat": 43.666898126473924,
+    "lng": -79.3920051387834,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "VI",
+    "name": "Nona Macdonald Visitors Centre",
+    "shortName": "Visitors Ctr",
+    "address": "25 King's College Circle, Toronto",
+    "lat": 43.6611882748143,
+    "lng": -79.3962651572513,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "VP",
+    "name": "Varsity Pavilion",
+    "shortName": "Vars Pavilion",
+    "address": "299 Bloor Street West, Toronto",
+    "lat": 43.666433,
+    "lng": -79.39643,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "WA",
+    "name": "St. George Street123",
+    "shortName": "StGeorge-123",
+    "address": "123 St. George Street, Toronto",
+    "lat": 43.666900551888155,
+    "lng": -79.3992115638542,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "WB",
+    "name": "Wallberg Building",
+    "shortName": "Wallberg",
+    "address": "184-200 College Street, Toronto",
+    "lat": 43.65912364957695,
+    "lng": -79.3951909325409,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "WE",
+    "name": "Wetmore Hall-New College",
+    "shortName": "Wetmore Hall",
+    "address": "300 Huron Street, Toronto",
+    "lat": 43.66223753899295,
+    "lng": -79.4005908898401,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "WI",
+    "name": "Wilson Hall-New College",
+    "shortName": "Wilson Hall",
+    "address": "40 Willcocks Street, Toronto",
+    "lat": 43.66176311667377,
+    "lng": -79.4003508321333,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "WN",
+    "name": "Windle House",
+    "shortName": "Windle House",
+    "address": "5 Elmsley Place, Toronto",
+    "lat": 43.66601289505634,
+    "lng": -79.3894939205932,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "WO",
+    "name": "Woodsworth College Residence",
+    "shortName": "WoodswrthRez",
+    "address": "321 Bloor St. West, Toronto",
+    "lat": 43.6673312789927,
+    "lng": -79.399330922155,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "WR",
+    "name": "Leighton Goldie McCarthy House (Child Study)",
+    "shortName": "McCarthy",
+    "address": "45 Walmer Road, Toronto",
+    "lat": 43.66967,
+    "lng": -79.40607,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "WS",
+    "name": "Warren Stevens Building",
+    "shortName": "Warren Stevn",
+    "address": "55 Harbord Street, Toronto",
+    "lat": 43.66278666117544,
+    "lng": -79.401021384387,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "WT",
+    "name": "Whitney Hall",
+    "shortName": "Whitney Hall",
+    "address": "85 St. George Street, Toronto",
+    "lat": 43.663755374135995,
+    "lng": -79.3979388556766,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "WW",
+    "name": "Woodsworth College",
+    "shortName": "Woodsworth",
+    "address": "119 St. George Street, Toronto",
+    "lat": 43.66639900309655,
+    "lng": -79.3987877748298,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "WY",
+    "name": "Wycliffe College",
+    "shortName": "Wycliffe",
+    "address": "5 Hoskin Avenue, Toronto",
+    "lat": 43.66453149750189,
+    "lng": -79.3950675509262,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "XG",
+    "name": "Spadina Avenue-665",
+    "shortName": "Spadina-665",
+    "address": "665 Spadina Avenue, ",
+    "lat": 43.66446,
+    "lng": -79.40223,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "XQ",
+    "name": "Queen's Park Crescent East-43",
+    "shortName": "Queen's E-43",
+    "address": "43 Queen's Park Crescent East, Toronto",
+    "lat": 43.66455332578703,
+    "lng": -79.3905889324236,
+    "source": "cobalt-2017"
+  },
+  {
+    "code": "ZC",
+    "name": "College Street-88",
+    "shortName": "College-88",
+    "address": "88 College Street, Toronto",
+    "lat": 43.66077157160064,
+    "lng": -79.3878436914968,
+    "source": "cobalt-2017"
+  }
+]

@@ -1,0 +1,145 @@
+openapi: 3.1.0
+info:
+  title: Unofficial Concept3D Map API for U of T
+  version: 2026-07-10
+  description: |
+    Reverse-engineered, unofficial documentation for the Concept3D API behind `map.utoronto.ca`.
+    This API is documented only for maintenance and one-off data refreshes.
+
+    The public embedded web key observed in `map.utoronto.ca/js/index.js` is
+    `0001085cc708b9cef47080f064612ca5`. It is Concept3D's public browser key for the embedded map,
+    is not an API contract for better-ttb, and may break or be rotated without notice.
+
+    better-ttb vendors a static buildings dataset instead of depending on this API at runtime. Use
+    Concept3D only as reference material for occasional manual refreshes.
+servers:
+  - url: https://api.concept3d.com
+tags:
+  - name: Locations
+  - name: Categories
+paths:
+  /locations:
+    get:
+      tags: [Locations]
+      summary: List map locations
+      description: Returns U of T map locations for map id `1809`.
+      operationId: getLocations
+      parameters:
+        - $ref: '#/components/parameters/Map'
+        - $ref: '#/components/parameters/Key'
+      responses:
+        '200':
+          description: Location records.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Location'
+              example:
+                - catId: 123
+                  lat: 43.660722
+                  lng: -79.395294
+                  mapId: 1809
+                  id: 456
+                  name: Wallberg Building
+                  level: null
+                  locationType: polygon
+                  shape:
+                    paths:
+                      - - {lat: 43.6607, lng: -79.3953}
+                        - {lat: 43.6608, lng: -79.3951}
+  /categories:
+    get:
+      tags: [Categories]
+      summary: List map categories
+      description: Returns category metadata for map id `1809`. The `children` flag includes nested categories.
+      operationId: getCategories
+      parameters:
+        - $ref: '#/components/parameters/Map'
+        - $ref: '#/components/parameters/Key'
+        - name: children
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Include child categories.
+      responses:
+        '200':
+          description: Category tree or category list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+components:
+  parameters:
+    Map:
+      name: map
+      in: query
+      required: true
+      schema:
+        type: integer
+        const: 1809
+      description: Concept3D map id for U of T.
+    Key:
+      name: key
+      in: query
+      required: true
+      schema:
+        type: string
+      example: 0001085cc708b9cef47080f064612ca5
+      description: Public embedded web key from map.utoronto.ca; unofficial and subject to breakage.
+  schemas:
+    Location:
+      type: object
+      properties:
+        catId:
+          type: integer
+        lat:
+          type: number
+        lng:
+          type: number
+        mapId:
+          type: integer
+          example: 1809
+        id:
+          type: integer
+        name:
+          type: string
+        level:
+          type:
+            - string
+            - integer
+            - 'null'
+        locationType:
+          type: string
+          description: Concept3D geometry type, for example point or polygon.
+        shape:
+          type: object
+          properties:
+            paths:
+              type: array
+              items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    lat:
+                      type: number
+                    lng:
+                      type: number
+      additionalProperties: true
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+      additionalProperties: true

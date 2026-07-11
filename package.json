@@ -1,0 +1,28 @@
+{
+  "name": "better-ttb",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "npm@11.12.1",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "deploy": "turbo deploy",
+    "alchemy": "tsx alchemy.run.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.44.0",
+    "@types/node": "^26.1.1",
+    "alchemy": "^0.93.12",
+    "tsx": "^4.23.0",
+    "turbo": "^2.10.4",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

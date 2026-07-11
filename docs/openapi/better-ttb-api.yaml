@@ -1,0 +1,467 @@
+openapi: 3.1.0
+info:
+  title: better-ttb API
+  version: 0.1.0
+  description: |
+    OpenAPI documentation for better-ttb's own API, implemented as Cloudflare Worker / TanStack Start
+    server routes. This API wraps and caches reverse-engineered, unofficial University of Toronto data
+    sources for application use.
+
+    The upstream TTB API is CORS-locked to `https://ttb.utoronto.ca`; browser clients should call these
+    better-ttb routes instead of calling the upstream API directly.
+servers:
+  - url: https://better-ttb.example.com
+    description: Production deployment placeholder.
+  - url: http://localhost:5173
+    description: Local TanStack Start development server.
+tags:
+  - name: Catalog
+  - name: Courses
+  - name: Reference Data
+  - name: Sharing
+  - name: Admin
+paths:
+  /api/catalog:
+    get:
+      tags: [Catalog]
+      summary: Get scraped course catalog artifact
+      description: |
+        Returns the full course catalog JSON artifact for the requested sessions. Supports `ETag` and
+        `Cache-Control` response headers and conditional `If-None-Match` requests with `304 Not Modified`.
+      operationId: getCatalog
+      parameters:
+        - name: sessions
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Comma-separated session codes.
+          example: 20269,20271,20269-20271
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Prior ETag value for conditional requests.
+      responses:
+        '200':
+          description: Catalog artifact.
+          headers:
+            ETag:
+              schema: {type: string}
+              description: Entity tag for cache revalidation.
+            Cache-Control:
+              schema: {type: string}
+              example: public, max-age=3600, stale-while-revalidate=86400
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogResponse'
+              example:
+                sessions: ["20269", "20271", "20269-20271"]
+                scrapedAt: "2026-07-10T12:00:00Z"
+                courses:
+                  - code: CSC108H1
+                    sectionCode: F
+                    name: Introduction to Computer Programming
+                    campus: St. George
+                    sessions: ["20269"]
+                    sections: []
+        '304':
+          description: Catalog has not changed.
+  /api/course/{code}:
+    get:
+      tags: [Courses]
+      summary: Refresh one course live
+      description: Live seat and waitlist refresh. Proxies upstream TTB `getCoursesByCodeAndSectionCode`.
+      operationId: getCourse
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: {type: string}
+          example: CSC108H1
+        - name: sectionCode
+          in: query
+          required: false
+          schema: {type: string}
+          example: F
+      responses:
+        '200':
+          description: Fresh course offering data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseLookupResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/reference-data:
+    get:
+      tags: [Reference Data]
+      summary: Get cached TTB reference data
+      description: Cached 24-hour proxy of upstream TTB `reference-data`.
+      operationId: getReferenceData
+      responses:
+        '200':
+          description: Reference data object from TTB.
+          headers:
+            Cache-Control:
+              schema: {type: string}
+              example: public, max-age=86400
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: array
+                  items: {}
+  /api/share:
+    post:
+      tags: [Sharing]
+      summary: Store a shared plan
+      operationId: createShare
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan]
+              properties:
+                plan:
+                  type: object
+                  additionalProperties: true
+                  description: Client-owned schedule plan JSON.
+            example:
+              plan:
+                courses: ["CSC108H1-F"]
+                meetings: []
+      responses:
+        '200':
+          description: Share id.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id:
+                    type: string
+              example:
+                id: sh_01J0ABCDEF1234567890
+  /api/share/{id}:
+    get:
+      tags: [Sharing]
+      summary: Get a shared plan
+      operationId: getShare
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Stored plan JSON.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/admin/scrape:
+    post:
+      tags: [Admin]
+      summary: Start or resume catalog scrape
+      description: |
+        Starts or resumes a chunked TTB scrape. Requires `Authorization: Bearer <ADMIN_TOKEN>`.
+        The scraper is designed around Cloudflare free-plan limits, keeping each invocation below the
+        50-subrequest ceiling by processing at most about 40 TTB pages and storing a KV cursor for resume.
+      operationId: adminScrape
+      security:
+        - AdminBearer: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessions:
+                  type: array
+                  items: {type: string}
+                  default: ["20269", "20271", "20269-20271"]
+                maxPages:
+                  type: integer
+                  minimum: 1
+                  description: Optional invocation page limit.
+                reset:
+                  type: boolean
+                  description: Reset any stored cursor before scraping.
+            example:
+              sessions: ["20269", "20271", "20269-20271"]
+              maxPages: 40
+              reset: false
+      responses:
+        '200':
+          description: Scrape status and cursor.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, cursor]
+                properties:
+                  status:
+                    type: string
+                    enum: [started, resumed, complete]
+                  cursor:
+                    type: object
+                    additionalProperties: true
+              example:
+                status: resumed
+                cursor:
+                  sessions: ["20269", "20271", "20269-20271"]
+                  division: ARTSC
+                  page: 41
+                  pageSize: 20
+                  total: 3751
+        '401':
+          description: Missing or invalid admin bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: unauthorized
+components:
+  securitySchemes:
+    AdminBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: ADMIN_TOKEN
+  responses:
+    NotFound:
+      description: Missing resource or upstream TTB 404/4404 no-results response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: not_found
+  schemas:
+    CatalogResponse:
+      type: object
+      required: [sessions, scrapedAt, courses]
+      properties:
+        sessions:
+          type: array
+          items: {type: string}
+        scrapedAt:
+          type: string
+          format: date-time
+        courses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Course'
+    CourseLookupResponse:
+      type: object
+      properties:
+        course:
+          $ref: '#/components/schemas/Course'
+        courses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Course'
+      description: Implementation may return one course or all matching offerings, depending on how section codes are handled.
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+    Course:
+      type: object
+      description: Course schema equivalent to the upstream TTB course model.
+      properties:
+        id: {type: string}
+        code: {type: string, example: CSC108H1}
+        sectionCode: {type: string, example: F}
+        name: {type: string, example: Introduction to Computer Programming}
+        campus: {type: string, example: St. George}
+        sessions:
+          type: array
+          items: {type: string}
+        faculty:
+          $ref: '#/components/schemas/CodeName'
+        department:
+          $ref: '#/components/schemas/CodeName'
+        maxCredit: {type: number}
+        minCredit: {type: number}
+        cancelInd: {type: string, enum: [Y, N]}
+        breadths:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
+        cmCourseInfo:
+          $ref: '#/components/schemas/CmCourseInfo'
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Section'
+        primaryTeachMethod: {type: string, example: LEC}
+        fullyOnline: {type: boolean}
+        primaryWaitlistable: {type: boolean}
+        primaryFull: {type: boolean}
+      additionalProperties: true
+    Section:
+      type: object
+      properties:
+        name: {type: string, example: LEC0101}
+        type: {type: string, example: Lecture}
+        teachMethod: {type: string, example: LEC}
+        sectionNumber: {type: string, example: "0101"}
+        meetingTimes:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeetingTime'
+        instructors:
+          type: array
+          items:
+            type: object
+            properties:
+              firstName: {type: string}
+              lastName: {type: string}
+            additionalProperties: true
+        currentEnrolment: {type: integer}
+        maxEnrolment: {type: integer}
+        currentWaitlist: {type: integer}
+        waitlistInd: {type: string, enum: [Y, N]}
+        cancelInd: {type: string, enum: [Y, N]}
+        enrolmentInd: {type: string}
+        tbaInd: {type: string, enum: [Y, N]}
+        openLimitInd: {type: string, enum: [Y, N]}
+        deliveryModes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeliveryMode'
+        subTitle: {type: string}
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
+        enrolmentControls:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnrolmentControl'
+        linkedMeetingSections:
+          oneOf:
+            - type: 'null'
+            - type: array
+              items: {}
+      additionalProperties: true
+    MeetingTime:
+      type: object
+      properties:
+        start:
+          $ref: '#/components/schemas/DayTime'
+        end:
+          $ref: '#/components/schemas/DayTime'
+        building:
+          $ref: '#/components/schemas/Building'
+        sessionCode: {type: string, example: "20269"}
+        repetition: {type: string, example: WEEKLY}
+        repetitionTime:
+          type: string
+          enum: [ONCE_A_WEEK, MANUAL, FIRST_AND_THIRD_WEEK, SECOND_AND_FOURTH_WEEK]
+      additionalProperties: true
+    DayTime:
+      type: object
+      properties:
+        day:
+          type: integer
+          minimum: 1
+          maximum: 7
+          description: 1=Monday through 7=Sunday.
+        millisofday:
+          type: integer
+          description: Milliseconds since midnight.
+          example: 36000000
+    Building:
+      type: object
+      properties:
+        buildingCode: {type: string, example: WW}
+        buildingRoomNumber: {type: string, example: "120"}
+        buildingRoomSuffix: {type: string, example: ""}
+        buildingUrl: {type: string, format: uri}
+        buildingName:
+          type:
+            - string
+            - 'null'
+      additionalProperties: true
+    EnrolmentControl:
+      type: object
+      properties:
+        yearOfStudy: {type: string, example: "*"}
+        post:
+          $ref: '#/components/schemas/CodeName'
+        subject:
+          $ref: '#/components/schemas/CodeName'
+        quantity: {type: integer}
+        sequence: {type: integer}
+      additionalProperties: true
+    DeliveryMode:
+      type: object
+      properties:
+        session: {type: string, example: "20269"}
+        mode:
+          type: string
+          enum: [INPER, SYNC, ASYNC, HYBR]
+    Note:
+      type: object
+      properties:
+        name: {type: string, example: Course Note}
+        type: {type: string, example: COURSE}
+        content:
+          type: string
+          description: HTML content from TTB.
+    CmCourseInfo:
+      type: object
+      properties:
+        description:
+          type:
+            - string
+            - 'null'
+        prerequisitesText:
+          type:
+            - string
+            - 'null'
+        corequisitesText:
+          type:
+            - string
+            - 'null'
+        exclusionsText:
+          type:
+            - string
+            - 'null'
+        recommendedPreparation:
+          type:
+            - string
+            - 'null'
+        levelOfInstruction: {type: string, example: undergraduate}
+        breadthRequirements:
+          type: array
+          items: {type: string}
+        distributionRequirements:
+          type: array
+          items: {type: string}
+        division: {type: string}
+    CodeName:
+      type: object
+      properties:
+        code: {type: string}
+        name: {type: string}
+      additionalProperties: true

@@ -1,0 +1,619 @@
+openapi: 3.1.0
+info:
+  title: Unofficial University of Toronto Timetable Builder API
+  version: 2026-07-10
+  description: |
+    Reverse-engineered, unofficial documentation for the University of Toronto Timetable Builder API.
+    These notes are for maintenance of better-ttb and should not be treated as a supported U of T contract.
+
+    The API is reachable at `https://api.easi.utoronto.ca/ttb` without authentication for server-side
+    callers. Browser callers are blocked in practice: CORS is locked to `https://ttb.utoronto.ca`.
+    Calls from other browser origins can receive an empty body and no CORS headers, so better-ttb must
+    use a server proxy or scheduled scraper.
+
+    Session codes use `{year}{month}`. Examples: `20269` is Fall 2026, `20271` is Winter 2027, and
+    `20269-20271` is a Fall-Winter year-long session. Meeting days are 1-indexed
+    (`1=Monday` through `7=Sunday`). `millisofday` is milliseconds since midnight.
+servers:
+  - url: https://api.easi.utoronto.ca/ttb
+tags:
+  - name: Courses
+    description: Course search, lookup, and title matching.
+  - name: Reference Data
+    description: Filter values used by the official Timetable Builder SPA.
+paths:
+  /getPageableCourses:
+    post:
+      tags: [Courses]
+      summary: Search pageable courses
+      description: |
+        Main paginated course search used by the official Timetable Builder.
+
+        Important behavior verified against the live API:
+        - `pageSize` is hard-capped at 20 server-side, even if a larger value is sent.
+        - `page` is 1-indexed.
+        - For text search, the official SPA sends the same term in both `courseCode` and `courseTitle`.
+          Sending only `courseCode` with `searchCourseDescription: false` can return the 404/4404 no-results shape.
+        - Empty search terms plus `divisions: ["ARTSC"]` return the full Arts & Science catalog for the selected sessions.
+        - No results return HTTP 404 with payload `{"payload":null,"status":[{"code":4404}]}`.
+      operationId: getPageableCourses
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PageableCoursesRequest'
+            examples:
+              csc108:
+                summary: CSC108 across Fall, Winter, and year-long sessions
+                value:
+                  courseCodeAndTitleProps:
+                    courseCode: CSC108
+                    courseTitle: CSC108
+                    courseSectionCode: ""
+                    searchCourseDescription: true
+                  departmentProps: []
+                  campuses: []
+                  sessions: ["20269", "20271", "20269-20271"]
+                  requirementProps: []
+                  instructor: ""
+                  courseLevels: []
+                  deliveryModes: []
+                  dayPreferences: []
+                  timePreferences: []
+                  divisions: [ARTSC]
+                  creditWeights: []
+                  availableSpace: false
+                  waitListable: false
+                  page: 1
+                  pageSize: 20
+                  direction: asc
+      responses:
+        '200':
+          description: Search results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageableCoursesResponse'
+              examples:
+                csc108:
+                  value:
+                    payload:
+                      pageableCourse:
+                        courses:
+                          - id: 69dd-example
+                            code: CSC108H1
+                            sectionCode: F
+                            name: Introduction to Computer Programming
+                            campus: St. George
+                            sessions: ["20269"]
+                            faculty:
+                              code: ARTSC
+                              name: Faculty of Arts and Science
+                            department:
+                              code: CSC
+                              name: Computer Science
+                            maxCredit: 0.5
+                            minCredit: 0.5
+                            cancelInd: N
+                            breadths: []
+                            notes:
+                              - name: Course Note
+                                type: COURSE
+                                content: <p>Course note HTML.</p>
+                            cmCourseInfo:
+                              description: <p>An introduction to programming using Python.</p>
+                              prerequisitesText: null
+                              corequisitesText: null
+                              exclusionsText: null
+                              recommendedPreparation: null
+                              levelOfInstruction: undergraduate
+                              breadthRequirements: ["The Physical and Mathematical Universes (5)"]
+                              distributionRequirements: ["Science"]
+                              division: Faculty of Arts and Science
+                            sections:
+                              - name: LEC0101
+                                type: Lecture
+                                teachMethod: LEC
+                                sectionNumber: "0101"
+                                meetingTimes:
+                                  - start: {day: 1, millisofday: 36000000}
+                                    end: {day: 1, millisofday: 46800000}
+                                    building:
+                                      buildingCode: WW
+                                      buildingRoomNumber: "120"
+                                      buildingRoomSuffix: ""
+                                      buildingUrl: https://map.utoronto.ca/
+                                      buildingName: null
+                                    sessionCode: "20269"
+                                    repetition: WEEKLY
+                                    repetitionTime: ONCE_A_WEEK
+                                instructors:
+                                  - firstName: Jane
+                                    lastName: Doe
+                                currentEnrolment: 5
+                                maxEnrolment: 30
+                                currentWaitlist: 0
+                                waitlistInd: N
+                                cancelInd: N
+                                enrolmentInd: E
+                                tbaInd: N
+                                openLimitInd: N
+                                deliveryModes:
+                                  - session: "20269"
+                                    mode: INPER
+                                subTitle: ""
+                                notes: []
+                                enrolmentControls: []
+                                linkedMeetingSections: null
+                            primaryTeachMethod: LEC
+                            fullyOnline: false
+                            primaryWaitlistable: false
+                            primaryFull: false
+                        total: 1
+                        page: 1
+                        pageSize: 20
+                        direction: asc
+                    status: []
+        '404':
+          $ref: '#/components/responses/NoResults'
+  /reference-data:
+    get:
+      tags: [Reference Data]
+      summary: Get filter reference data
+      description: |
+        Returns valid sessions, divisions, campuses, requirements, course levels, delivery modes,
+        day/time preferences, and credit weights. Filter values are usually label strings, for example
+        campuses such as `St. George`, delivery modes such as `In Person`, and course levels such as `100/A`.
+      operationId: getReferenceData
+      responses:
+        '200':
+          description: Reference data used to populate filters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReferenceDataResponse'
+  /getCoursesByCodeAndSectionCode/{code}:
+    get:
+      tags: [Courses]
+      summary: Get one course by code
+      description: |
+        Returns all current offerings for a course code, for example `CSC108H1`. The official SPA may also
+        pass a section code as a query parameter. better-ttb uses this endpoint for live seat and waitlist refreshes.
+      operationId: getCoursesByCodeAndSectionCode
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+          example: CSC108H1
+        - name: sectionCode
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional section code such as `F`, `S`, or `Y`.
+      responses:
+        '200':
+          description: Matching course offerings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoursesResponse'
+        '404':
+          $ref: '#/components/responses/NoResults'
+  /getOptimizedMatchingCourseTitles:
+    get:
+      tags: [Courses]
+      summary: Get optimized matching course titles
+      description: Typeahead endpoint used by the official SPA for course-title suggestions.
+      operationId: getOptimizedMatchingCourseTitles
+      parameters:
+        - name: term
+          in: query
+          required: true
+          schema:
+            type: string
+          example: CSC108
+        - name: divisions
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated division codes such as `ARTSC`.
+          example: ARTSC
+        - name: sessions
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated session codes such as `20269,20271,20269-20271`.
+          example: 20269,20271,20269-20271
+        - name: lowerThreshold
+          in: query
+          required: false
+          schema:
+            type: integer
+          example: 0
+        - name: upperThreshold
+          in: query
+          required: false
+          schema:
+            type: integer
+          example: 10
+        - name: divisionsOnCampus
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Official SPA filter parameter; observed as a query-string value.
+      responses:
+        '200':
+          description: Matching title suggestions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payload:
+                    type: array
+                    items:
+                      type: string
+                  status:
+                    $ref: '#/components/schemas/StatusList'
+components:
+  responses:
+    NoResults:
+      description: No matching records. The API uses HTTP 404 with internal status code 4404.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            payload: null
+            status:
+              - code: 4404
+                message: No results
+  schemas:
+    PageableCoursesRequest:
+      type: object
+      required: [courseCodeAndTitleProps, sessions, page, pageSize, direction]
+      properties:
+        courseCodeAndTitleProps:
+          type: object
+          required: [courseCode, courseTitle, courseSectionCode, searchCourseDescription]
+          properties:
+            courseCode:
+              type: string
+              description: Search term for course code. For reliable results, mirror the term in `courseTitle`.
+            courseTitle:
+              type: string
+              description: Search term for course title. The official SPA mirrors the code search term here.
+            courseSectionCode:
+              type: string
+              description: Optional section code filter.
+            searchCourseDescription:
+              type: boolean
+        departmentProps:
+          type: array
+          items:
+            $ref: '#/components/schemas/CodeName'
+        campuses:
+          type: array
+          items:
+            type: string
+          examples: [["St. George"]]
+        sessions:
+          type: array
+          items:
+            type: string
+          description: Session codes, for example `20269`, `20271`, or `20269-20271`.
+        requirementProps:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        instructor:
+          type: string
+        courseLevels:
+          type: array
+          items:
+            type: string
+        deliveryModes:
+          type: array
+          items:
+            type: string
+        dayPreferences:
+          type: array
+          items:
+            type: string
+        timePreferences:
+          type: array
+          items:
+            type: string
+        divisions:
+          type: array
+          items:
+            type: string
+          examples: [[ARTSC]]
+        creditWeights:
+          type: array
+          items:
+            type: string
+        availableSpace:
+          type: boolean
+        waitListable:
+          type: boolean
+        page:
+          type: integer
+          minimum: 1
+          description: 1-indexed page number.
+        pageSize:
+          type: integer
+          maximum: 20
+          description: Hard-capped at 20 server-side.
+        direction:
+          type: string
+          enum: [asc, desc]
+    PageableCoursesResponse:
+      type: object
+      properties:
+        payload:
+          type: object
+          properties:
+            pageableCourse:
+              type: object
+              properties:
+                courses:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Course'
+                total:
+                  type: integer
+                page:
+                  type: integer
+                pageSize:
+                  type: integer
+                direction:
+                  type: string
+        status:
+          $ref: '#/components/schemas/StatusList'
+    CoursesResponse:
+      type: object
+      properties:
+        payload:
+          oneOf:
+            - type: array
+              items:
+                $ref: '#/components/schemas/Course'
+            - $ref: '#/components/schemas/Course'
+        status:
+          $ref: '#/components/schemas/StatusList'
+    ReferenceDataResponse:
+      type: object
+      properties:
+        payload:
+          type: object
+          additionalProperties:
+            type: array
+            items: {}
+        status:
+          $ref: '#/components/schemas/StatusList'
+    ErrorResponse:
+      type: object
+      properties:
+        payload:
+          type: 'null'
+        status:
+          $ref: '#/components/schemas/StatusList'
+    StatusList:
+      type: array
+      items:
+        type: object
+        properties:
+          code:
+            type: integer
+          message:
+            type: string
+    Course:
+      type: object
+      description: Course offering with sections, meeting times, catalog metadata, and enrollment flags.
+      properties:
+        id: {type: string}
+        code: {type: string, example: CSC108H1}
+        sectionCode: {type: string, example: F}
+        name: {type: string, example: Introduction to Computer Programming}
+        campus: {type: string, example: St. George}
+        sessions:
+          type: array
+          items: {type: string}
+        faculty:
+          $ref: '#/components/schemas/CodeName'
+        department:
+          $ref: '#/components/schemas/CodeName'
+        maxCredit: {type: number}
+        minCredit: {type: number}
+        cancelInd:
+          type: string
+          enum: [Y, N]
+        breadths:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
+        cmCourseInfo:
+          $ref: '#/components/schemas/CmCourseInfo'
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Section'
+        primaryTeachMethod: {type: string, example: LEC}
+        fullyOnline: {type: boolean}
+        primaryWaitlistable: {type: boolean}
+        primaryFull: {type: boolean}
+      additionalProperties: true
+    Section:
+      type: object
+      properties:
+        name: {type: string, example: LEC0101}
+        type: {type: string, example: Lecture}
+        teachMethod: {type: string, example: LEC}
+        sectionNumber: {type: string, example: "0101"}
+        meetingTimes:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeetingTime'
+        instructors:
+          type: array
+          items:
+            type: object
+            properties:
+              firstName: {type: string}
+              lastName: {type: string}
+            additionalProperties: true
+        currentEnrolment: {type: integer}
+        maxEnrolment: {type: integer}
+        currentWaitlist: {type: integer}
+        waitlistInd: {type: string, enum: [Y, N]}
+        cancelInd: {type: string, enum: [Y, N]}
+        enrolmentInd: {type: string}
+        tbaInd: {type: string, enum: [Y, N]}
+        openLimitInd: {type: string, enum: [Y, N]}
+        deliveryModes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeliveryMode'
+        subTitle: {type: string}
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
+        enrolmentControls:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnrolmentControl'
+        linkedMeetingSections:
+          oneOf:
+            - type: 'null'
+            - type: array
+              items: {}
+      additionalProperties: true
+    MeetingTime:
+      type: object
+      properties:
+        start:
+          $ref: '#/components/schemas/DayTime'
+        end:
+          $ref: '#/components/schemas/DayTime'
+        building:
+          $ref: '#/components/schemas/Building'
+        sessionCode:
+          type: string
+          example: "20269"
+        repetition:
+          type: string
+          example: WEEKLY
+        repetitionTime:
+          type: string
+          enum: [ONCE_A_WEEK, MANUAL, FIRST_AND_THIRD_WEEK, SECOND_AND_FOURTH_WEEK]
+      additionalProperties: true
+    DayTime:
+      type: object
+      properties:
+        day:
+          type: integer
+          minimum: 1
+          maximum: 7
+          description: 1=Monday through 7=Sunday.
+        millisofday:
+          type: integer
+          description: Milliseconds since midnight.
+          example: 36000000
+    Building:
+      type: object
+      properties:
+        buildingCode: {type: string, example: WW}
+        buildingRoomNumber: {type: string, example: "120"}
+        buildingRoomSuffix: {type: string, example: ""}
+        buildingUrl: {type: string, format: uri}
+        buildingName:
+          type:
+            - string
+            - 'null'
+          description: Often null in TTB; map URL and code are more reliable.
+      additionalProperties: true
+    EnrolmentControl:
+      type: object
+      properties:
+        yearOfStudy: {type: string, example: "*"}
+        post:
+          $ref: '#/components/schemas/CodeName'
+        subject:
+          $ref: '#/components/schemas/CodeName'
+        quantity: {type: integer}
+        sequence: {type: integer}
+      additionalProperties: true
+    DeliveryMode:
+      type: object
+      properties:
+        session:
+          type: string
+          example: "20269"
+        mode:
+          type: string
+          description: Observed codes include `INPER`, `SYNC`, `ASYNC`, and `HYBR`.
+          enum: [INPER, SYNC, ASYNC, HYBR]
+    Note:
+      type: object
+      properties:
+        name: {type: string, example: Course Note}
+        type: {type: string, example: COURSE}
+        content:
+          type: string
+          description: HTML content from the source system.
+    CmCourseInfo:
+      type: object
+      properties:
+        description:
+          type:
+            - string
+            - 'null'
+          description: HTML course description.
+        prerequisitesText:
+          type:
+            - string
+            - 'null'
+        corequisitesText:
+          type:
+            - string
+            - 'null'
+        exclusionsText:
+          type:
+            - string
+            - 'null'
+        recommendedPreparation:
+          type:
+            - string
+            - 'null'
+        levelOfInstruction:
+          type: string
+          example: undergraduate
+        breadthRequirements:
+          type: array
+          items: {type: string}
+        distributionRequirements:
+          type: array
+          items: {type: string}
+        division:
+          type: string
+    CodeName:
+      type: object
+      properties:
+        code: {type: string}
+        name: {type: string}
+      additionalProperties: true
