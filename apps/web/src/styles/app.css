@@ -87,3 +87,9 @@
       sans-serif;
   }
 }
+
+/* Leaflet: unloaded tile area should match the app theme instead of
+   leaflet's default light gray (jarring flash in dark mode on pan/zoom). */
+.leaflet-container {
+  background: var(--background);
+}
