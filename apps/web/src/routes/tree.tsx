@@ -248,7 +248,7 @@ function TreeRoute() {
   }, [focusCode, focusFound, posthog]);
 
   return (
-    <main className="flex h-dvh flex-col bg-background text-foreground">
+    <main className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       <TreeHeader />
 
       <div className="flex flex-wrap items-center gap-3 border-t px-4 py-3">

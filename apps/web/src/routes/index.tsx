@@ -444,7 +444,7 @@ function Home() {
 
   return (
     <TooltipProvider>
-      <main className="flex h-dvh flex-col bg-background text-foreground">
+      <main className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
         <BuilderHeader
           activePlan={activePlan}
           plans={plans}
