@@ -28,6 +28,21 @@ export default defineConfig(({ command }) => {
       sourcemap: true,
       rollupOptions: {
         external: ["node:async_hooks", "cloudflare:workers"],
+        output: {
+          // Keep server-side helpers that are shared between the worker entry
+          // (scheduled handler) and the API-route chunks out of the entry
+          // chunk. Otherwise rolldown re-exports them as named exports on the
+          // worker module, which the Workers runtime rejects ("not of type
+          // 'function or ExportedHandler'") so the worker fails to start.
+          manualChunks(id: string) {
+            if (
+              id.includes("/src/server/") ||
+              id.includes("/packages/shared/")
+            ) {
+              return "server-lib";
+            }
+          },
+        },
       },
     },
     plugins: [...alchemyPlugins, tanstackStart(), viteReact(), tailwindcss()],
