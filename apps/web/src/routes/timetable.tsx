@@ -7,8 +7,14 @@ import type {
   GeneratorConfig,
   RuleConfig,
 } from "@better-ttb/generator";
-import type { Course, DayNumber, DeliveryMode } from "@better-ttb/shared";
-import { formatSessionLabel, millisofdayToHHMM } from "@better-ttb/shared";
+import type {
+  Course,
+  DayNumber,
+  DeliveryMode,
+  SectionCode,
+  TtbCourseLookupResponse,
+} from "@better-ttb/shared";
+import { millisofdayToHHMM } from "@better-ttb/shared";
 import {
   Check,
   ChevronRight,
@@ -28,6 +34,7 @@ import {
 import * as React from "react";
 
 import { AppNav, MobileNav } from "@/components/app-nav";
+import { CourseDetailSheet } from "@/components/course/course-detail-sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WeekGrid } from "@/components/timetable/WeekGrid";
 import type { BlockedWindow } from "@/components/timetable/WeekGrid";
@@ -69,13 +76,6 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -102,7 +102,9 @@ import {
   type RuleKind,
 } from "@/lib/generator-prefs";
 import { buildIcsCalendar } from "@/lib/ics";
+import { extractLiveCourse, mergeLiveEnrolment } from "@/lib/live-course";
 import { parsePlanJson } from "@/lib/plan-io";
+import { useRequisiteGraph } from "@/lib/requisites/use-graph";
 import {
   applyCandidateSelections,
   buildGeneratorCourseInputs,
@@ -171,6 +173,9 @@ function TimetableRoute() {
   const setActivePlan = usePlanStore((state) => state.setActivePlan);
   const newPlan = usePlanStore((state) => state.newPlan);
   const choose = usePlanStore((state) => state.choose);
+  const clearChoice = usePlanStore((state) => state.clearChoice);
+  const pinCourse = usePlanStore((state) => state.pin);
+  const unpinCourse = usePlanStore((state) => state.unpin);
   const resetAllChoices = usePlanStore((state) => state.resetAllChoices);
   const importPlan = usePlanStore((state) => state.importPlan);
   const updatePlanPrefs = usePlanStore((state) => state.updatePlanPrefs);
@@ -184,6 +189,13 @@ function TimetableRoute() {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [blockoutMode, setBlockoutMode] = React.useState(false);
   const [selectedCourseKey, setSelectedCourseKey] = React.useState<string | null>(null);
+  const [liveCourses, setLiveCourses] = React.useState<Map<string, Course>>(
+    () => new Map(),
+  );
+  const [refreshingCourseKey, setRefreshingCourseKey] = React.useState<
+    string | null
+  >(null);
+  const [refreshError, setRefreshError] = React.useState<string | null>(null);
   const [shareOpen, setShareOpen] = React.useState(false);
   const [shareUrl, setShareUrl] = React.useState("");
   const [shareError, setShareError] = React.useState<string | null>(null);
@@ -212,8 +224,10 @@ function TimetableRoute() {
     const map = new Map<string, Course>();
 
     catalog?.courses.forEach((course) => map.set(courseKey(course), course));
+    liveCourses.forEach((course, key) => map.set(key, course));
     return map;
-  }, [catalog]);
+  }, [catalog, liveCourses]);
+  const graph = useRequisiteGraph(catalog?.courses);
   const activeCourses = React.useMemo(
     () => getActivePlanCourses(activePlan, coursesByKey),
     [activePlan, coursesByKey],
@@ -260,6 +274,20 @@ function TimetableRoute() {
     [visibleSelections],
   );
   const selectedCourse = selectedCourseKey ? coursesByKey.get(selectedCourseKey) ?? null : null;
+  const planSelectedSections = React.useMemo(
+    () =>
+      planSelectedFromTimetableSections(
+        selectedSectionsFromPlan(activePlan, coursesByKey),
+      ),
+    [activePlan, coursesByKey],
+  );
+  const selectedCoursePinned = selectedCourse
+    ? activePlan.pinned.some(
+        (entry) =>
+          entry.courseCode === selectedCourse.code &&
+          entry.sectionCode === selectedCourse.sectionCode,
+      )
+    : false;
   const blockedWindows = React.useMemo(
     () => blockedWindowsFromRules(generatorPrefs.rules),
     [generatorPrefs.rules],
@@ -275,6 +303,45 @@ function TimetableRoute() {
       ...prefs,
       generator: updater(prefs.generator ?? createDefaultGeneratorPrefs()),
     }));
+  }
+
+  async function refreshSeats(course: Course) {
+    const key = courseKey(course);
+
+    setRefreshingCourseKey(key);
+    setRefreshError(null);
+
+    try {
+      const params = new URLSearchParams({ sectionCode: course.sectionCode });
+      const response = await fetch(`/api/course/${course.code}?${params.toString()}`);
+
+      if (!response.ok) {
+        throw new Error(`Refresh failed with HTTP ${response.status}`);
+      }
+
+      const liveCourse = extractLiveCourse(
+        (await response.json()) as TtbCourseLookupResponse,
+        course.sectionCode,
+      );
+
+      if (!liveCourse) {
+        throw new Error("Live course response did not include this offering");
+      }
+
+      setLiveCourses((current) => {
+        const next = new Map(current);
+        next.set(key, mergeLiveEnrolment(course, liveCourse));
+        return next;
+      });
+    } catch (refreshErrorValue) {
+      setRefreshError(
+        refreshErrorValue instanceof Error
+          ? refreshErrorValue.message
+          : String(refreshErrorValue),
+      );
+    } finally {
+      setRefreshingCourseKey(null);
+    }
   }
 
   function setRules(rules: RuleConfig[]) {
@@ -702,9 +769,26 @@ function TimetableRoute() {
 
         <CourseDetailSheet
           course={selectedCourse}
+          activePlan={activePlan}
+          planSelectedSections={planSelectedSections}
+          refreshError={refreshError}
+          refreshing={selectedCourseKey === refreshingCourseKey}
+          pinned={selectedCoursePinned}
+          graph={graph}
+          onChoose={choose}
+          onClearChoice={clearChoice}
           onOpenChange={(open) => {
             if (!open) {
               setSelectedCourseKey(null);
+            }
+          }}
+          onPin={(course) => pinCourse(course.code, course.sectionCode)}
+          onUnpin={(course) => unpinCourse(course.code, course.sectionCode)}
+          onRefresh={refreshSeats}
+          onOpenCourse={(code) => {
+            const resolved = resolveCourseKey(code, coursesByKey);
+            if (resolved) {
+              setSelectedCourseKey(resolved);
             }
           }}
         />
@@ -1432,67 +1516,32 @@ function UnscheduledList({
   );
 }
 
-function CourseDetailSheet({
-  course,
-  onOpenChange,
-}: {
-  course: Course | null;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return (
-    <Sheet open={Boolean(course)} onOpenChange={onOpenChange}>
-      <SheetContent className="flex w-full flex-col overflow-hidden p-0 sm:max-w-xl">
-        {course && (
-          <>
-            <SheetHeader className="border-b p-5">
-              <SheetTitle>{course.code}</SheetTitle>
-              <SheetDescription>{course.name}</SheetDescription>
-            </SheetHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">{course.sectionCode}</Badge>
-                  <Badge variant="outline">{course.maxCredit.toFixed(1)} credit</Badge>
-                  <Badge variant="outline">{formatSessionsLabel(course.sessions)}</Badge>
-                </div>
-                <div className="overflow-hidden rounded-md border">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/40 text-xs text-muted-foreground">
-                      <tr>
-                        <th className="px-3 py-2 text-left font-medium">Section</th>
-                        <th className="px-3 py-2 text-left font-medium">Meetings</th>
-                        <th className="px-3 py-2 text-left font-medium">Seats</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {course.sections.map((section) => (
-                        <tr key={section.name} className="border-t">
-                          <td className="px-3 py-2 align-top font-medium">{section.name}</td>
-                          <td className="px-3 py-2 align-top text-muted-foreground">
-                            {section.meetingTimes.length > 0
-                              ? section.meetingTimes
-                                  .map(
-                                    (meeting) =>
-                                      `${formatDayShort(meeting.start.day)} ${millisofdayToHHMM(meeting.start.millisofday)}-${millisofdayToHHMM(meeting.end.millisofday)}`,
-                                  )
-                                  .join(", ")
-                              : "TBA"}
-                          </td>
-                          <td className="px-3 py-2 align-top">
-                            {section.currentEnrolment}/{section.maxEnrolment}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
-  );
+const SECTION_PREFERENCE: SectionCode[] = ["F", "S", "Y"];
+
+/**
+ * Resolves a course reference (bare code like "CSC207H1" or a full
+ * "code:sectionCode" key) to a key present in `coursesByKey`, preferring
+ * F/S/Y offerings in that order when only a bare code is given.
+ */
+function resolveCourseKey(
+  value: string,
+  coursesByKey: Map<string, Course>,
+): string | null {
+  const [code, section] = value.split(":");
+
+  if (section) {
+    return coursesByKey.has(value) ? value : null;
+  }
+
+  for (const preference of SECTION_PREFERENCE) {
+    const candidate = `${code}:${preference}`;
+
+    if (coursesByKey.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function Banner({
@@ -1563,22 +1612,6 @@ function buildTimeOptions(startHour: number, endHour: number): Array<{ value: nu
   }
 
   return options;
-}
-
-function formatSessionsLabel(sessions: readonly string[]): string {
-  return sessions.map(formatSessionCode).join(" + ");
-}
-
-function formatSessionCode(session: string): string {
-  try {
-    return formatSessionLabel(session);
-  } catch {
-    return session;
-  }
-}
-
-function formatDayShort(day: DayNumber): string {
-  return DAY_OPTIONS.find((option) => option.value === day)?.label ?? String(day);
 }
 
 function toggleValue<T>(values: readonly T[], value: T): T[] {
