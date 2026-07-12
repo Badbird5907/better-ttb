@@ -41,6 +41,9 @@ export interface TimetableBlock {
   disallowed: boolean;
   preview: boolean;
   waitlisted: boolean;
+  draft?: boolean;
+  draftOptions?: string[];
+  draftInvalidatesSectionKeys?: string[];
 }
 
 export interface UnscheduledSection {

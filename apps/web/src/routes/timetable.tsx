@@ -11,17 +11,22 @@ import type {
   Course,
   DayNumber,
   DeliveryMode,
+  Section,
   SectionCode,
+  TeachMethod,
   TtbCourseLookupResponse,
 } from "@better-ttb/shared";
-import { millisofdayToHHMM } from "@better-ttb/shared";
+import { isSectionWaitlisted, millisofdayToHHMM } from "@better-ttb/shared";
 import {
   Check,
   ChevronRight,
   Copy,
   Download,
   FileJson,
+  Footprints,
+  Hand,
   Layers,
+  MousePointerClick,
   Plus,
   RotateCcw,
   Share2,
@@ -36,7 +41,7 @@ import * as React from "react";
 import { AppNav, MobileNav } from "@/components/app-nav";
 import { CourseDetailSheet } from "@/components/course/course-detail-sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { WeekGrid } from "@/components/timetable/WeekGrid";
+import { WeekGrid, walkConnectorTone } from "@/components/timetable/WeekGrid";
 import type { BlockedWindow } from "@/components/timetable/WeekGrid";
 import {
   GeneratePanelBody,
@@ -44,6 +49,12 @@ import {
 } from "@/components/timetable/GeneratePanelContent";
 import { BUILDING_INDEX } from "@/lib/buildings";
 import { daysWithClasses, hasTightTransfer } from "@/lib/itinerary";
+import {
+  buildAlternativeDraftBlocks,
+  linkageImpact,
+  walkFromPreviousBlock,
+  type WalkFromPreviousBlock,
+} from "@/lib/section-alternatives";
 import { buildWalkSecondsMap } from "@/lib/walk-matrix";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -107,6 +118,7 @@ import { parsePlanJson } from "@/lib/plan-io";
 import { useRequisiteGraph } from "@/lib/requisites/use-graph";
 import {
   applyCandidateSelections,
+  activeMeetingsForTerm,
   buildGeneratorCourseInputs,
   buildTermBlocks,
   computeCreditTotals,
@@ -116,11 +128,13 @@ import {
   getActivePlanCourses,
   pinnedKey,
   planSelectedFromTimetableSections,
+  selectedSectionKey,
   selectedSectionsFromCandidate,
   selectedSectionsFromPlan,
   totalWalkMinutes,
   type SelectedTimetableSection,
   type Term,
+  type TimetableBlock,
 } from "@/lib/timetable";
 import { cn } from "@/lib/utils";
 import { useCatalogStore } from "@/stores/catalog";
@@ -147,6 +161,17 @@ interface BuildingRecord {
   code: string;
   lat: number;
   lng: number;
+}
+
+interface AltTarget {
+  courseKey: string;
+  teachMethod: TeachMethod;
+  sectionName: string;
+}
+
+interface SlotPickerState {
+  options: Section[];
+  walkByName: Map<string, WalkFromPreviousBlock | null>;
 }
 
 const NO_ADD_RULE = "__add_rule__";
@@ -205,6 +230,8 @@ function TimetableRoute() {
   const [workerError, setWorkerError] = React.useState<string | null>(null);
   const [generationResult, setGenerationResult] = React.useState<GenerationResult | null>(null);
   const [previewCandidate, setPreviewCandidate] = React.useState<CandidateTimetable | null>(null);
+  const [altTarget, setAltTarget] = React.useState<AltTarget | null>(null);
+  const [slotPicker, setSlotPicker] = React.useState<SlotPickerState | null>(null);
   const importInputRef = React.useRef<HTMLInputElement | null>(null);
   const workerRef = React.useRef<Worker | null>(null);
   const activeSessionsKey = activePlan.sessions.join(",");
@@ -220,6 +247,34 @@ function TimetableRoute() {
     },
     [],
   );
+
+  React.useEffect(() => {
+    setAltTarget(null);
+    setSlotPicker(null);
+  }, [activePlanId, term]);
+
+  React.useEffect(() => {
+    if (previewCandidate) {
+      setAltTarget(null);
+      setSlotPicker(null);
+    }
+  }, [previewCandidate]);
+
+  React.useEffect(() => {
+    if (!altTarget) {
+      return;
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setAltTarget(null);
+        setSlotPicker(null);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [altTarget]);
 
   const coursesByKey = React.useMemo(() => {
     const map = new Map<string, Course>();
@@ -282,6 +337,45 @@ function TimetableRoute() {
       ),
     [activePlan, coursesByKey],
   );
+  const altTargetCourse = altTarget
+    ? coursesByKey.get(altTarget.courseKey) ?? null
+    : null;
+  const altTargetPinned = altTarget
+    ? activePlan.pinned.find((entry) => pinnedKey(entry) === altTarget.courseKey) ?? null
+    : null;
+  const altDraftBlocks = React.useMemo(() => {
+    if (!altTarget || !altTargetCourse || !altTargetPinned || previewCandidate) {
+      return [];
+    }
+
+    return buildAlternativeDraftBlocks(
+      altTargetCourse,
+      altTarget.courseKey,
+      altTarget.teachMethod,
+      altTargetPinned.chosen,
+      term,
+      planSelectedSections,
+    );
+  }, [
+    altTarget,
+    altTargetCourse,
+    altTargetPinned,
+    planSelectedSections,
+    previewCandidate,
+    term,
+  ]);
+  const visibleGridBlocks = React.useMemo(
+    () => [...termData[term].blocks, ...altDraftBlocks],
+    [altDraftBlocks, term, termData],
+  );
+  const highlightedSectionKey =
+    altTarget && altTargetCourse
+      ? selectedSectionKey(
+          { courseCode: altTargetCourse.code, sectionCode: altTargetCourse.sectionCode },
+          altTarget.teachMethod,
+          altTarget.sectionName,
+        )
+      : null;
   const selectedCoursePinned = selectedCourse
     ? activePlan.pinned.some(
         (entry) =>
@@ -449,6 +543,139 @@ function TimetableRoute() {
     // so other tabs receive a single storage event rather than a burst.
     chooseMany(applyCandidateSelections(activePlan, coursesByKey, previewCandidate));
     setPreviewCandidate(null);
+  }
+
+  function commitSwitch(sectionName: string) {
+    if (!altTarget || !altTargetCourse || !altTargetPinned) {
+      return;
+    }
+
+    const candidate = altTargetCourse.sections.find(
+      (section) =>
+        section.teachMethod === altTarget.teachMethod &&
+        section.name === sectionName,
+    );
+
+    if (!candidate) {
+      return;
+    }
+
+    const impact = linkageImpact(
+      altTargetCourse,
+      altTargetPinned.chosen,
+      altTarget.teachMethod,
+      candidate,
+    );
+    const baseSelection = {
+      courseCode: altTargetCourse.code,
+      sectionCode: altTargetCourse.sectionCode,
+    };
+
+    chooseMany([
+      {
+        ...baseSelection,
+        teachMethod: altTarget.teachMethod,
+        sectionName,
+      },
+      ...impact.clears.map((teachMethod) => ({
+        ...baseSelection,
+        teachMethod,
+        sectionName: null,
+      })),
+      ...impact.autoPicks.map((autoPick) => ({
+        ...baseSelection,
+        teachMethod: autoPick.teachMethod,
+        sectionName: autoPick.sectionName,
+      })),
+    ]);
+
+    posthog.capture("section_switched_via_grid", {
+      course_code: altTargetCourse.code,
+      teach_method: altTarget.teachMethod,
+      cleared_count: impact.clears.length,
+      autopicked_count: impact.autoPicks.length,
+    });
+
+    setAltTarget(null);
+    setSlotPicker(null);
+  }
+
+  function openSlotPicker(block: TimetableBlock) {
+    if (!altTarget || !altTargetCourse) {
+      return;
+    }
+
+    const optionNames = new Set(block.draftOptions ?? []);
+    const options = altTargetCourse.sections.filter(
+      (section) =>
+        section.teachMethod === altTarget.teachMethod &&
+        optionNames.has(section.name),
+    );
+
+    if (options.length === 0) {
+      return;
+    }
+
+    if (options.length === 1) {
+      commitSwitch(options[0]!.name);
+      return;
+    }
+
+    const enrolledBlocks = termData[term].blocks.filter(
+      (entry) =>
+        !(
+          entry.courseKey === altTarget.courseKey &&
+          entry.teachMethod === altTarget.teachMethod
+        ),
+    );
+    const walkByName = new Map<string, WalkFromPreviousBlock | null>();
+
+    for (const option of options) {
+      walkByName.set(
+        option.name,
+        walkFromPreviousBlock(
+          enrolledBlocks,
+          block,
+          buildingCodeForSlot(option, block, term),
+        ),
+      );
+    }
+
+    setSlotPicker({
+      options: [...options].sort((left, right) =>
+        compareWalkOptions(left, right, walkByName),
+      ),
+      walkByName,
+    });
+  }
+
+  function handleBlockClick(block: TimetableBlock) {
+    if (block.draft) {
+      openSlotPicker(block);
+      return;
+    }
+
+    if (altTarget) {
+      setAltTarget(null);
+      setSlotPicker(null);
+      return;
+    }
+
+    setSelectedCourseKey(block.courseKey);
+  }
+
+  function handleBlockAltAction(block: TimetableBlock) {
+    if (block.draft || block.preview) {
+      return;
+    }
+
+    setSelectedCourseKey(null);
+    setSlotPicker(null);
+    setAltTarget({
+      courseKey: block.courseKey,
+      teachMethod: block.teachMethod,
+      sectionName: block.sectionName,
+    });
   }
 
   async function sharePlan() {
@@ -653,14 +880,43 @@ function TimetableRoute() {
                   </div>
                 </div>
               )}
+              {altTarget && altTargetCourse && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed bg-background p-3">
+                  <div>
+                    <p className="text-sm font-medium">
+                      Switching {altTargetCourse.code} {altTarget.teachMethod}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {altDraftBlocks.length > 0
+                        ? "Click a dashed block, Esc or X to cancel."
+                        : "No other sections are available for this term. Esc or X to cancel."}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setAltTarget(null);
+                      setSlotPicker(null);
+                    }}
+                  >
+                    <X />
+                    Cancel
+                  </Button>
+                </div>
+              )}
 
               <WeekGrid
-                blocks={termData[term].blocks}
+                blocks={visibleGridBlocks}
                 blockedWindows={blockedWindows}
                 blockoutEnabled={blockoutMode}
+                highlightSectionKey={highlightedSectionKey}
+                onBlockAltAction={handleBlockAltAction}
                 onPaintCell={paintBlockedCell}
-                onBlockClick={(block) => setSelectedCourseKey(block.courseKey)}
+                onBlockClick={handleBlockClick}
               />
+              <GridActionLegend />
 
               <UnscheduledList
                 term={term}
@@ -785,6 +1041,19 @@ function TimetableRoute() {
             const resolved = resolveCourseKey(code, coursesByKey);
             if (resolved) {
               setSelectedCourseKey(resolved);
+            }
+          }}
+        />
+
+        <SlotPickerDialog
+          slotPicker={slotPicker}
+          course={altTargetCourse}
+          chosen={altTargetPinned?.chosen ?? {}}
+          target={altTarget}
+          onChoose={commitSwitch}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSlotPicker(null);
             }
           }}
         />
@@ -1559,6 +1828,202 @@ function Banner({
       {children}
     </div>
   );
+}
+
+function SlotPickerDialog({
+  slotPicker,
+  course,
+  chosen,
+  target,
+  onChoose,
+  onOpenChange,
+}: {
+  slotPicker: SlotPickerState | null;
+  course: Course | null;
+  chosen: Record<string, string | null>;
+  target: AltTarget | null;
+  onChoose: (sectionName: string) => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={slotPicker !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Which section?</DialogTitle>
+          <DialogDescription>
+            Multiple sections share this time slot. Pick one to switch the whole section.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          {slotPicker?.options.map((section) => {
+            const walk = slotPicker.walkByName.get(section.name) ?? null;
+            const impactNote =
+              course && target
+                ? describeLinkageImpact(course, chosen, target.teachMethod, section)
+                : null;
+
+            return (
+              <button
+                key={section.name}
+                type="button"
+                className="w-full rounded-md border bg-background p-3 text-left transition-colors hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                onClick={() => onChoose(section.name)}
+              >
+                <span className="flex flex-wrap items-start justify-between gap-3">
+                  <span className="min-w-0 space-y-1">
+                    <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+                      {section.name}
+                      {isSectionWaitlisted(section) && (
+                        <Badge variant="outline" className="px-1 py-0 text-[10px] font-normal text-amber-700 dark:text-amber-400">
+                          WL
+                        </Badge>
+                      )}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {formatInstructors(section)}
+                    </span>
+                    {impactNote && (
+                      <span className="block text-xs text-destructive">
+                        {impactNote}
+                      </span>
+                    )}
+                  </span>
+                  <span className="flex shrink-0 flex-col items-end gap-1 text-xs">
+                    <span className="text-muted-foreground">
+                      {section.currentEnrolment}/{section.maxEnrolment}
+                    </span>
+                    {walk && (
+                      <span
+                        className={cn(
+                          "flex items-center gap-1 rounded-full border border-white/20 bg-neutral-900/95 px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums shadow-sm dark:border-white/15 dark:bg-neutral-950/95",
+                          walkConnectorTone(walk.minutes),
+                        )}
+                      >
+                        <Footprints className="size-3 shrink-0" aria-hidden="true" />
+                        <span>
+                          ~{walk.minutes} min from {walk.fromCode}
+                        </span>
+                      </span>
+                    )}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function GridActionLegend() {
+  const coarse = useCoarsePointer();
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-xs text-muted-foreground">
+      <span className="inline-flex items-center gap-1">
+        <MousePointerClick className="size-3.5" aria-hidden="true" />
+        {coarse ? "Tap — course details" : "Click — course details"}
+      </span>
+      <span aria-hidden="true">·</span>
+      <span className="inline-flex items-center gap-1">
+        <Hand className="size-3.5" aria-hidden="true" />
+        {coarse ? "Press & hold — switch section" : "Right-click — switch section"}
+      </span>
+    </div>
+  );
+}
+
+function useCoarsePointer(): boolean {
+  const [coarse, setCoarse] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return;
+    }
+
+    const query = window.matchMedia("(pointer: coarse)");
+    const update = () => setCoarse(query.matches);
+
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  return coarse;
+}
+
+function describeLinkageImpact(
+  course: Course,
+  chosen: Record<string, string | null>,
+  teachMethod: TeachMethod,
+  candidate: Section,
+): string | null {
+  const impact = linkageImpact(course, chosen, teachMethod, candidate);
+
+  if (impact.clears.length === 0) {
+    return null;
+  }
+
+  return impact.clears
+    .map((clearedTeachMethod) => {
+      const autoPick = impact.autoPicks.find(
+        (entry) => entry.teachMethod === clearedTeachMethod,
+      );
+
+      if (autoPick) {
+        return `switches ${clearedTeachMethod} to ${autoPick.sectionName}`;
+      }
+
+      return `clears ${chosen[clearedTeachMethod] ?? clearedTeachMethod}`;
+    })
+    .join(" · ");
+}
+
+function formatInstructors(section: Section): string {
+  const names = section.instructors
+    .map((instructor) => `${instructor.firstName} ${instructor.lastName}`.trim())
+    .filter(Boolean);
+
+  return names.length > 0 ? names.join(", ") : "Instructor TBA";
+}
+
+function buildingCodeForSlot(
+  section: Section,
+  block: TimetableBlock,
+  term: Term,
+): string {
+  return (
+    activeMeetingsForTerm(section, term).find(
+      (meeting) =>
+        meeting.start.day === block.day &&
+        meeting.start.millisofday === block.startMillis &&
+        meeting.end.millisofday === block.endMillis,
+    )?.building.buildingCode.trim() ?? ""
+  );
+}
+
+function compareWalkOptions(
+  left: Section,
+  right: Section,
+  walkByName: Map<string, WalkFromPreviousBlock | null>,
+): number {
+  const leftWalk = walkByName.get(left.name) ?? null;
+  const rightWalk = walkByName.get(right.name) ?? null;
+
+  if (leftWalk && rightWalk) {
+    return leftWalk.minutes - rightWalk.minutes || left.name.localeCompare(right.name);
+  }
+
+  if (leftWalk) {
+    return -1;
+  }
+
+  if (rightWalk) {
+    return 1;
+  }
+
+  return left.name.localeCompare(right.name);
 }
 
 function sortCandidates(

@@ -44,7 +44,7 @@ export interface SectionSelection {
   courseCode: string;
   sectionCode: SectionCode;
   teachMethod: TeachMethod;
-  sectionName: string;
+  sectionName: string | null;
 }
 
 interface PlanActions {
@@ -141,13 +141,20 @@ export const usePlanStore = create<PlanStore>()(
           plans: updatePlan(state.plans, state.activePlanId, (plan) =>
             selections.reduce(
               (updated, selection) =>
-                chooseSection(
-                  updated,
-                  selection.courseCode,
-                  selection.sectionCode,
-                  selection.teachMethod,
-                  selection.sectionName,
-                ),
+                selection.sectionName === null
+                  ? clearSectionChoice(
+                      updated,
+                      selection.courseCode,
+                      selection.sectionCode,
+                      selection.teachMethod,
+                    )
+                  : chooseSection(
+                      updated,
+                      selection.courseCode,
+                      selection.sectionCode,
+                      selection.teachMethod,
+                      selection.sectionName,
+                    ),
               plan,
             ),
           ),

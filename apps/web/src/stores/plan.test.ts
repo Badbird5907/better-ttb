@@ -122,6 +122,42 @@ describe("cross-tab sync", () => {
   });
 });
 
+describe("plan store actions", () => {
+  beforeEach(() => {
+    usePlanStore.setState(createInitialPlanState("plan-1"));
+  });
+
+  it("routes null selections through clearSectionChoice in chooseMany", () => {
+    const state = usePlanStore.getState();
+
+    state.chooseMany([
+      {
+        courseCode: "CSC207H1",
+        sectionCode: "F",
+        teachMethod: "LEC",
+        sectionName: "LEC0101",
+      },
+      {
+        courseCode: "CSC207H1",
+        sectionCode: "F",
+        teachMethod: "TUT",
+        sectionName: "TUT0101",
+      },
+      {
+        courseCode: "CSC207H1",
+        sectionCode: "F",
+        teachMethod: "TUT",
+        sectionName: null,
+      },
+    ]);
+
+    const pinned = usePlanStore.getState().plans[0]?.pinned[0];
+
+    expect(pinned?.chosen.LEC).toBe("LEC0101");
+    expect(pinned?.chosen.TUT).toBeNull();
+  });
+});
+
 describe("cross-tab echo suppression", () => {
   afterEach(() => {
     vi.unstubAllGlobals();

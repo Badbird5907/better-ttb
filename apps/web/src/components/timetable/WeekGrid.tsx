@@ -19,6 +19,8 @@ interface WeekGridProps {
   blockoutEnabled?: boolean;
   compact?: boolean;
   className?: string;
+  highlightSectionKey?: string | null;
+  onBlockAltAction?: (block: TimetableBlock) => void;
   onBlockClick?: (block: TimetableBlock) => void;
   onPaintCell?: (day: DayNumber, startMillis: number, endMillis: number) => void;
 }
@@ -49,11 +51,17 @@ export function WeekGrid({
   blockoutEnabled = false,
   compact = false,
   className,
+  highlightSectionKey = null,
+  onBlockAltAction,
   onBlockClick,
   onPaintCell,
 }: WeekGridProps) {
   const [hoveredCourseKey, setHoveredCourseKey] = React.useState<string | null>(null);
+  const [pulsedKeys, setPulsedKeys] = React.useState<Set<string>>(() => new Set());
   const paintingRef = React.useRef(false);
+  const longPressTimerRef = React.useRef<number | null>(null);
+  const longPressStartRef = React.useRef<{ x: number; y: number } | null>(null);
+  const swallowClickRef = React.useRef(false);
   const laidOutBlocks = React.useMemo(() => layoutBlocks(blocks), [blocks]);
   const walkConnectors = React.useMemo(
     () => (compact ? [] : buildWalkConnectors(laidOutBlocks)),
@@ -100,12 +108,58 @@ export function WeekGrid({
     return () => window.removeEventListener("pointerup", stopPainting);
   }, [blockoutEnabled]);
 
+  React.useEffect(
+    () => () => {
+      cancelLongPress();
+    },
+    [],
+  );
+
   function paintCell(day: DayNumber, start: number, end: number) {
     if (!blockoutEnabled || !onPaintCell) {
       return;
     }
 
     onPaintCell(day, start, end);
+  }
+
+  function startLongPress(block: TimetableBlock, event: React.PointerEvent) {
+    if (!onBlockAltAction || event.pointerType === "mouse") {
+      return;
+    }
+
+    cancelLongPress();
+    longPressStartRef.current = { x: event.clientX, y: event.clientY };
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
+      longPressStartRef.current = null;
+      swallowClickRef.current = true;
+      onBlockAltAction(block);
+    }, 500);
+  }
+
+  function moveLongPress(event: React.PointerEvent) {
+    const start = longPressStartRef.current;
+
+    if (!start) {
+      return;
+    }
+
+    if (
+      Math.abs(event.clientX - start.x) > 10 ||
+      Math.abs(event.clientY - start.y) > 10
+    ) {
+      cancelLongPress();
+    }
+  }
+
+  function cancelLongPress() {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    longPressStartRef.current = null;
   }
 
   return (
@@ -220,9 +274,17 @@ export function WeekGrid({
               ))}
               {dayBlocks.map((block) => {
                 const faded =
-                  hoveredCourseKey !== null && hoveredCourseKey !== block.courseKey;
+                  !block.draft &&
+                  hoveredCourseKey !== null &&
+                  hoveredCourseKey !== block.courseKey;
+                const pulsed = pulsedKeys.has(block.sectionKey);
+                const highlighted =
+                  !block.draft &&
+                  highlightSectionKey !== null &&
+                  block.sectionKey === highlightSectionKey;
                 const left = `${(block.lane / block.laneCount) * 100}%`;
                 const width = `${100 / block.laneCount}%`;
+                const optionCount = block.draftOptions?.length ?? 0;
 
                 return (
                   <button
@@ -234,6 +296,10 @@ export function WeekGrid({
                       block.conflict && "border-red-600 ring-1 ring-red-600",
                       !block.conflict && block.disallowed && "opacity-60 saturate-50 ring-1 ring-slate-500",
                       block.preview && "border-dashed",
+                      block.draft &&
+                        "cursor-pointer border-2 border-dashed border-white/80 opacity-80 hover:opacity-100",
+                      highlighted && "ring-2 ring-white/70",
+                      pulsed && "animate-pulse border-red-500 ring-2 ring-red-500",
                       faded && "opacity-35",
                       compact && "rounded-sm border p-0.5 shadow-none",
                     )}
@@ -246,16 +312,74 @@ export function WeekGrid({
                       ),
                       left,
                       width,
-                      backgroundColor: block.color,
-                      borderColor: block.conflict
+                      backgroundColor: block.draft
+                        ? colorWithAlpha(block.color, 0.55)
+                        : block.color,
+                      borderColor: pulsed
+                        ? "#ef4444"
+                        : block.conflict
                         ? "#dc2626"
-                        : block.disallowed
+                        : block.draft
+                          ? "rgba(255,255,255,0.8)"
+                          : block.disallowed
                           ? "#64748b"
                           : "rgba(255,255,255,0.55)",
+                      touchAction: "manipulation",
                     }}
-                    onClick={() => onBlockClick?.(block)}
-                    onMouseEnter={() => setHoveredCourseKey(block.courseKey)}
-                    onMouseLeave={() => setHoveredCourseKey(null)}
+                    onClick={(event) => {
+                      if (swallowClickRef.current) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        swallowClickRef.current = false;
+                        return;
+                      }
+
+                      onBlockClick?.(block);
+                    }}
+                    onContextMenu={(event) => {
+                      if (!onBlockAltAction) {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      if (swallowClickRef.current) {
+                        return;
+                      }
+
+                      cancelLongPress();
+                      onBlockAltAction(block);
+                    }}
+                    onFocus={() => {
+                      if (block.draft) {
+                        setPulsedKeys(new Set(block.draftInvalidatesSectionKeys ?? []));
+                      }
+                    }}
+                    onBlur={() => {
+                      if (block.draft) {
+                        setPulsedKeys(new Set());
+                      }
+                    }}
+                    onMouseEnter={() => {
+                      if (block.draft) {
+                        setPulsedKeys(new Set(block.draftInvalidatesSectionKeys ?? []));
+                        return;
+                      }
+
+                      setHoveredCourseKey(block.courseKey);
+                    }}
+                    onMouseLeave={() => {
+                      if (block.draft) {
+                        setPulsedKeys(new Set());
+                        return;
+                      }
+
+                      setHoveredCourseKey(null);
+                    }}
+                    onPointerDown={(event) => startLongPress(block, event)}
+                    onPointerMove={moveLongPress}
+                    onPointerUp={cancelLongPress}
+                    onPointerLeave={cancelLongPress}
+                    onPointerCancel={cancelLongPress}
                   >
                     {compact ? (
                       <span className="block truncate font-semibold leading-none">
@@ -272,6 +396,11 @@ export function WeekGrid({
                         <span className="truncate text-[10px] leading-tight text-white/85">
                           {block.room}
                         </span>
+                        {block.draft && optionCount > 1 && (
+                          <span className="mt-auto text-center text-[10px] font-semibold leading-tight text-white">
+                            +{optionCount} options
+                          </span>
+                        )}
                       </span>
                     )}
                     {!compact && block.waitlisted && (
@@ -319,7 +448,10 @@ function buildWalkConnectors(blocks: readonly TimetableBlock[]): WalkConnector[]
 }
 
 function buildDayWalkConnectors(blocks: readonly TimetableBlock[]): WalkConnector[] {
-  const sorted = [...blocks].sort(
+  // Draft alternative blocks carry only their first option's building, so a
+  // connector against them could show a misleading walk time; skip them and
+  // let the slot picker present accurate per-option walk times instead.
+  const sorted = blocks.filter((block) => !block.draft).sort(
     (left, right) =>
       left.startMillis - right.startMillis ||
       left.endMillis - right.endMillis ||
@@ -361,7 +493,7 @@ function buildDayWalkConnectors(blocks: readonly TimetableBlock[]): WalkConnecto
   return connectors;
 }
 
-function walkConnectorTone(minutes: number): string {
+export function walkConnectorTone(minutes: number): string {
   if (minutes >= 10) {
     return "text-red-400";
   }
@@ -371,6 +503,21 @@ function walkConnectorTone(minutes: number): string {
   }
 
   return "text-white";
+}
+
+function colorWithAlpha(color: string, alpha: number): string {
+  const match = color.match(/^#([0-9a-f]{6})$/i);
+
+  if (!match?.[1]) {
+    return color;
+  }
+
+  const value = match[1];
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
 function layoutBlocks(blocks: readonly TimetableBlock[]): LaidOutBlock[] {

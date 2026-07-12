@@ -3,7 +3,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { TimetableBlock } from "@/lib/timetable";
-import { WeekGrid } from "./WeekGrid";
+import { WeekGrid, walkConnectorTone } from "./WeekGrid";
 
 const block: TimetableBlock = {
   id: "CSC108H1:F:LEC:LEC0101:0",
@@ -116,6 +116,39 @@ describe("WeekGrid", () => {
     const html = renderToStaticMarkup(React.createElement(WeekGrid, { blocks: [block, nextBlock] }));
 
     expect(html).not.toContain("Walk BA");
+  });
+
+  it("renders draft blocks with dashed styling and a grouped option count", () => {
+    const draftBlock: TimetableBlock = {
+      ...block,
+      id: "draft:CSC108H1:F:LEC:1:36000000",
+      sectionKey: "draft:CSC108H1:F:LEC:1:36000000",
+      sectionName: "2 options",
+      draft: true,
+      draftOptions: ["LEC0201", "LEC0301"],
+    };
+    const html = renderToStaticMarkup(React.createElement(WeekGrid, { blocks: [draftBlock] }));
+
+    expect(html).toContain("border-dashed");
+    expect(html).toContain("rgba(124, 58, 237, 0.55)");
+    expect(html).toContain("+2 options");
+  });
+
+  it("highlights the active section key without affecting draft blocks", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(WeekGrid, {
+        blocks: [block],
+        highlightSectionKey: block.sectionKey,
+      }),
+    );
+
+    expect(html).toContain("ring-white/70");
+  });
+
+  it("exports the walking connector tone used by other timetable controls", () => {
+    expect(walkConnectorTone(4)).toBe("text-white");
+    expect(walkConnectorTone(7)).toBe("text-amber-400");
+    expect(walkConnectorTone(10)).toBe("text-red-400");
   });
 });
 
