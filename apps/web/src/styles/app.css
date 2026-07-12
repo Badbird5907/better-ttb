@@ -89,7 +89,11 @@
 }
 
 /* Leaflet: unloaded tile area should match the app theme instead of
-   leaflet's default light gray (jarring flash in dark mode on pan/zoom). */
-.leaflet-container {
-  background: var(--background);
+   leaflet's default light gray (jarring flash in dark mode on pan/zoom).
+   leaflet's own stylesheet is imported from CampusMap's lazy chunk, which
+   loads AFTER app.css, so its `.leaflet-container { background: #ddd }` rule
+   wins on equal specificity. `!important` (plus a more specific selector)
+   guarantees the app-theme background wins regardless of import order. */
+div.leaflet-container {
+  background: var(--background) !important;
 }

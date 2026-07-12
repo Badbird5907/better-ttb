@@ -10,6 +10,22 @@ import { fetchWalkRoute } from "@/lib/route-client";
 
 interface CampusMapProps {
   itinerary: DayItinerary;
+  /** Index (into `itinerary.transfers`) of the currently hovered transfer card, or null. */
+  hoveredTransferIndex: number | null;
+}
+
+/**
+ * Per-transfer layer bookkeeping so the hover effect can isolate a single route
+ * without refetching or rebuilding anything. `routeLine` starts undefined and is
+ * populated when the real geometry finishes loading; `fromMarkerIdx`/`toMarkerIdx`
+ * point at the endpoints in `markerRefs`.
+ */
+interface TransferEntry {
+  severity: ItineraryTransfer["severity"];
+  fallbackLine: L.Polyline;
+  routeLine?: L.Polyline;
+  fromMarkerIdx: number;
+  toMarkerIdx: number;
 }
 
 /** Solid-polyline colours per transfer severity (tight red, warn amber, ok slate). */
@@ -33,13 +49,22 @@ const CARTO_TILE_URLS = {
  * /map route via React.lazy so leaflet lands in its own chunk and never bloats
  * the other routes. This component only renders on the client.
  */
-export function CampusMap({ itinerary }: CampusMapProps) {
+export function CampusMap({ itinerary, hoveredTransferIndex }: CampusMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<L.Map | null>(null);
   const layerRef = React.useRef<L.LayerGroup | null>(null);
   const routeLayerRef = React.useRef<L.LayerGroup | null>(null);
   const tileLayerRef = React.useRef<L.TileLayer | null>(null);
   const resolvedTheme = useResolvedTheme();
+
+  // Per-transfer polylines + endpoint markers, rebuilt whenever the itinerary
+  // changes. Kept in refs (not state) so the hover effect can restyle them
+  // imperatively without triggering a rebuild or route refetch.
+  const transferEntriesRef = React.useRef<TransferEntry[]>([]);
+  const markerRefs = React.useRef<L.Marker[]>([]);
+  // Mirror of the hovered index so an async route fetch that resolves *while*
+  // a card is hovered can apply the current hover styling to the new polyline.
+  const hoveredIndexRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -88,6 +113,10 @@ export function CampusMap({ itinerary }: CampusMapProps) {
 
     layer.clearLayers();
     routeLayer.clearLayers();
+    // Reset per-rebuild bookkeeping so stale entries/markers can't leak across
+    // day/term changes or strict-mode double-invokes.
+    transferEntriesRef.current = [];
+    markerRefs.current = [];
 
     if (itinerary.markers.length === 0) {
       map.setView(ST_GEORGE_CENTER, DEFAULT_ZOOM);
@@ -103,9 +132,10 @@ export function CampusMap({ itinerary }: CampusMapProps) {
       ];
       path.push(position);
 
-      L.marker(position, { icon: buildMarkerIcon(marker) })
+      const leafletMarker = L.marker(position, { icon: buildMarkerIcon(marker) })
         .bindPopup(buildPopupHtml(marker))
         .addTo(layer);
+      markerRefs.current.push(leafletMarker);
     });
 
     const bounds = L.latLngBounds(path as L.LatLngTuple[]);
@@ -114,7 +144,7 @@ export function CampusMap({ itinerary }: CampusMapProps) {
     // Cancel any in-flight route fetches when the day/term (itinerary) changes.
     const controller = new AbortController();
 
-    itinerary.transfers.forEach((transfer) => {
+    itinerary.transfers.forEach((transfer, transferIndex) => {
       const color = SEVERITY_COLORS[transfer.severity];
       const from: L.LatLngTuple = [transfer.from.coordinates.lat, transfer.from.coordinates.lng];
       const to: L.LatLngTuple = [transfer.to.coordinates.lat, transfer.to.coordinates.lng];
@@ -128,6 +158,17 @@ export function CampusMap({ itinerary }: CampusMapProps) {
         dashArray: "6 8",
       }).addTo(routeLayer);
 
+      // Markers collapse consecutive same-building stops and transfers are the
+      // building changes between them, so transfer N always bridges marker N and
+      // marker N+1 in chronological order.
+      const entry: TransferEntry = {
+        severity: transfer.severity,
+        fallbackLine: fallback,
+        fromMarkerIdx: transferIndex,
+        toMarkerIdx: transferIndex + 1,
+      };
+      transferEntriesRef.current.push(entry);
+
       void fetchWalkRoute(transfer.from.buildingCode, transfer.to.buildingCode, controller.signal)
         .then((route) => {
           if (controller.signal.aborted || !route || route.coordinates.length < 2) {
@@ -136,23 +177,140 @@ export function CampusMap({ itinerary }: CampusMapProps) {
 
           // Upgrade to the solid, real walking geometry.
           routeLayer.removeLayer(fallback);
-          L.polyline(route.coordinates as L.LatLngTuple[], {
+          const routeLine = L.polyline(route.coordinates as L.LatLngTuple[], {
             color,
             weight: 4,
             opacity: 0.85,
           }).addTo(routeLayer);
+          entry.routeLine = routeLine;
+
+          // A route that finishes loading *while* a card is hovered must respect
+          // the current hover state instead of the just-added default style.
+          applyHoverStyles(
+            hoveredIndexRef.current,
+            transferEntriesRef.current,
+            markerRefs.current,
+            routeLayer,
+          );
         })
         .catch(() => {
           // Keep the dashed fallback on any unexpected failure.
         });
     });
 
+    // Apply whatever hover state is active at (re)build time (e.g. rebuild while
+    // a card stays hovered).
+    applyHoverStyles(
+      hoveredIndexRef.current,
+      transferEntriesRef.current,
+      markerRefs.current,
+      routeLayer,
+    );
+
     return () => {
       controller.abort();
     };
   }, [itinerary]);
 
-  return <div ref={containerRef} className="h-full w-full" />;
+  // Hover isolation — deliberately separate from the route-fetch effect so
+  // hovering never triggers a refetch or a layer rebuild. Restyles existing
+  // polylines/markers imperatively.
+  React.useEffect(() => {
+    hoveredIndexRef.current = hoveredTransferIndex;
+    const routeLayer = routeLayerRef.current;
+
+    if (!routeLayer) {
+      return;
+    }
+
+    applyHoverStyles(
+      hoveredTransferIndex,
+      transferEntriesRef.current,
+      markerRefs.current,
+      routeLayer,
+    );
+  }, [hoveredTransferIndex]);
+
+  return <div ref={containerRef} className="h-full w-full bg-background" />;
+}
+
+/**
+ * Imperatively restyles route polylines and markers to isolate a single hovered
+ * transfer. When `hoveredIndex` is null everything is restored to its default
+ * appearance. A transfer's active polyline is its `routeLine` once loaded, else
+ * its dashed `fallbackLine`.
+ */
+function applyHoverStyles(
+  hoveredIndex: number | null,
+  entries: readonly TransferEntry[],
+  markers: readonly L.Marker[],
+  routeLayer: L.LayerGroup,
+): void {
+  if (hoveredIndex === null) {
+    // Restore every polyline and marker to its default appearance. Once a real
+    // route line exists it replaces the fallback, so only one of the two is on
+    // the map at a time.
+    entries.forEach((entry) => {
+      const color = SEVERITY_COLORS[entry.severity];
+
+      if (entry.routeLine) {
+        if (!routeLayer.hasLayer(entry.routeLine)) {
+          entry.routeLine.addTo(routeLayer);
+        }
+        entry.routeLine.setStyle({ color, weight: 4, opacity: 0.85 });
+        if (routeLayer.hasLayer(entry.fallbackLine)) {
+          routeLayer.removeLayer(entry.fallbackLine);
+        }
+      } else {
+        if (!routeLayer.hasLayer(entry.fallbackLine)) {
+          entry.fallbackLine.addTo(routeLayer);
+        }
+        entry.fallbackLine.setStyle({ color, weight: 3, opacity: 0.6 });
+      }
+    });
+    markers.forEach((marker) => marker.setOpacity(1));
+    return;
+  }
+
+  const hovered = entries[hoveredIndex];
+
+  entries.forEach((entry, index) => {
+    const color = SEVERITY_COLORS[entry.severity];
+    const active = entry.routeLine ?? entry.fallbackLine;
+
+    if (index === hoveredIndex) {
+      // Emphasize the hovered transfer: heavier weight, full opacity, keep color.
+      const baseWeight = entry.routeLine ? 4 : 3;
+      active.setStyle({ color, weight: baseWeight + 2, opacity: 1 });
+    } else {
+      // Hide the non-hovered transfers' lines. Removing both the fallback and
+      // any loaded route keeps them fully out of view until hover ends.
+      if (routeLayer.hasLayer(entry.fallbackLine)) {
+        routeLayer.removeLayer(entry.fallbackLine);
+      }
+      if (entry.routeLine && routeLayer.hasLayer(entry.routeLine)) {
+        routeLayer.removeLayer(entry.routeLine);
+      }
+    }
+  });
+
+  // Re-add the hovered transfer's fallback if a non-hovered pass removed it (can
+  // happen when its route hasn't loaded yet and it shares nothing else).
+  if (hovered && !hovered.routeLine && !routeLayer.hasLayer(hovered.fallbackLine)) {
+    hovered.fallbackLine.addTo(routeLayer);
+    hovered.fallbackLine.setStyle({
+      color: SEVERITY_COLORS[hovered.severity],
+      weight: 5,
+      opacity: 1,
+    });
+  }
+
+  // Fade markers that are not the hovered transfer's endpoints.
+  markers.forEach((marker, index) => {
+    const isEndpoint =
+      hovered != null && (index === hovered.fromMarkerIdx || index === hovered.toMarkerIdx);
+    marker.setOpacity(isEndpoint ? 1 : 0.3);
+  });
 }
 
 function buildMarkerIcon(marker: ItineraryMarker): L.DivIcon {

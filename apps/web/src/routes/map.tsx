@@ -78,6 +78,8 @@ function MapRoute() {
     [activePlan, coursesByKey],
   );
 
+  const [hoveredTransferIndex, setHoveredTransferIndex] = React.useState<number | null>(null);
+
   const term = search.term;
   const day = search.day;
 
@@ -133,7 +135,7 @@ function MapRoute() {
 
       <div className="grid min-h-0 flex-1 grid-rows-[minmax(240px,1fr)_auto] border-t pb-16 md:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] md:grid-rows-1 md:pb-0">
         <section className="relative min-h-0">
-          <MapCanvas itinerary={itinerary} />
+          <MapCanvas itinerary={itinerary} hoveredTransferIndex={hoveredTransferIndex} />
           {itinerary.unknownLocations.length > 0 && (
             <div className="absolute bottom-3 left-3 z-[500] max-w-xs rounded-md border bg-background/95 p-2 text-xs shadow-sm">
               <p className="font-medium">No location for:</p>
@@ -146,7 +148,11 @@ function MapRoute() {
           )}
         </section>
 
-        <WalkPanel itinerary={itinerary} />
+        <WalkPanel
+          itinerary={itinerary}
+          hoveredTransferIndex={hoveredTransferIndex}
+          onHoverTransfer={setHoveredTransferIndex}
+        />
       </div>
 
       <MobileNav />
@@ -154,20 +160,26 @@ function MapRoute() {
   );
 }
 
-function MapCanvas({ itinerary }: { itinerary: DayItinerary }) {
+function MapCanvas({
+  itinerary,
+  hoveredTransferIndex,
+}: {
+  itinerary: DayItinerary;
+  hoveredTransferIndex: number | null;
+}) {
   const [mounted, setMounted] = React.useState(false);
 
   // Render nothing during SSR / first paint; leaflet needs a real DOM + window.
   React.useEffect(() => setMounted(true), []);
 
   if (!mounted) {
-    return <div className="h-full w-full bg-muted/30" />;
+    return <div className="h-full w-full bg-background" />;
   }
 
   return (
-    <React.Suspense fallback={<div className="h-full w-full bg-muted/30" />}>
-      <div className="relative h-full w-full">
-        <CampusMap itinerary={itinerary} />
+    <React.Suspense fallback={<div className="h-full w-full bg-background" />}>
+      <div className="relative h-full w-full bg-background">
+        <CampusMap itinerary={itinerary} hoveredTransferIndex={hoveredTransferIndex} />
         {itinerary.markers.length === 0 && (
           <div className="pointer-events-none absolute inset-0 z-[500] flex items-center justify-center">
             <div className="rounded-md border bg-background/95 px-4 py-3 text-center text-sm text-muted-foreground shadow-sm">
@@ -180,7 +192,15 @@ function MapCanvas({ itinerary }: { itinerary: DayItinerary }) {
   );
 }
 
-function WalkPanel({ itinerary }: { itinerary: DayItinerary }) {
+function WalkPanel({
+  itinerary,
+  hoveredTransferIndex,
+  onHoverTransfer,
+}: {
+  itinerary: DayItinerary;
+  hoveredTransferIndex: number | null;
+  onHoverTransfer: (index: number | null) => void;
+}) {
   return (
     <aside className="min-h-0 overflow-y-auto border-t bg-background md:border-t-0 md:border-l">
       <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background p-4">
@@ -203,7 +223,15 @@ function WalkPanel({ itinerary }: { itinerary: DayItinerary }) {
           </p>
         ) : (
           itinerary.transfers.map((transfer, index) => (
-            <TransferRow key={`${transfer.from.key}-${transfer.to.key}-${index}`} transfer={transfer} />
+            <TransferRow
+              key={`${transfer.from.key}-${transfer.to.key}-${index}`}
+              transfer={transfer}
+              isHovered={hoveredTransferIndex === index}
+              onMouseEnter={() => onHoverTransfer(index)}
+              onMouseLeave={() => onHoverTransfer(null)}
+              onFocus={() => onHoverTransfer(index)}
+              onBlur={() => onHoverTransfer(null)}
+            />
           ))
         )}
       </div>
@@ -215,14 +243,35 @@ function WalkPanel({ itinerary }: { itinerary: DayItinerary }) {
   );
 }
 
-function TransferRow({ transfer }: { transfer: ItineraryTransfer }) {
+function TransferRow({
+  transfer,
+  isHovered,
+  onMouseEnter,
+  onMouseLeave,
+  onFocus,
+  onBlur,
+}: {
+  transfer: ItineraryTransfer;
+  isHovered: boolean;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+  onFocus: () => void;
+  onBlur: () => void;
+}) {
   const tight = transfer.severity === "tight";
   const warn = transfer.severity === "warn";
 
   return (
     <div
+      tabIndex={0}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onFocus={onFocus}
+      onBlur={onBlur}
       className={cn(
-        "rounded-md border bg-background p-3 text-sm",
+        "rounded-md border bg-background p-3 text-sm transition-colors",
+        "hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        isHovered && "bg-muted/50",
         tight && "border-destructive/50 bg-destructive/5",
         warn && "border-amber-400/60 bg-amber-50 dark:bg-amber-500/10",
       )}
