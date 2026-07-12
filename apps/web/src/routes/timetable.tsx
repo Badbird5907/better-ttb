@@ -173,6 +173,7 @@ function TimetableRoute() {
   const setActivePlan = usePlanStore((state) => state.setActivePlan);
   const newPlan = usePlanStore((state) => state.newPlan);
   const choose = usePlanStore((state) => state.choose);
+  const chooseMany = usePlanStore((state) => state.chooseMany);
   const clearChoice = usePlanStore((state) => state.clearChoice);
   const pinCourse = usePlanStore((state) => state.pin);
   const unpinCourse = usePlanStore((state) => state.unpin);
@@ -444,14 +445,9 @@ function TimetableRoute() {
       candidate_score: previewCandidate.score,
     });
 
-    applyCandidateSelections(activePlan, coursesByKey, previewCandidate).forEach((selection) => {
-      choose(
-        selection.courseCode,
-        selection.sectionCode,
-        selection.teachMethod,
-        selection.sectionName,
-      );
-    });
+    // One store update (one localStorage write) instead of one per selection,
+    // so other tabs receive a single storage event rather than a burst.
+    chooseMany(applyCandidateSelections(activePlan, coursesByKey, previewCandidate));
     setPreviewCandidate(null);
   }
 

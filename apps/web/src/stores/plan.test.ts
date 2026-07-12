@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   PLAN_STORAGE_VERSION,
@@ -119,5 +119,48 @@ describe("cross-tab sync", () => {
 
     // Reference equality proves setState was skipped (no echo write).
     expect(usePlanStore.getState()).toBe(before);
+  });
+});
+
+describe("cross-tab echo suppression", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("does not write back to localStorage when applying another tab's state", async () => {
+    const written: string[] = [];
+    const backing = new Map<string, string>();
+
+    vi.resetModules();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => backing.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          written.push(key);
+          backing.set(key, value);
+        },
+        removeItem: (key: string) => void backing.delete(key),
+      },
+    });
+
+    // Fresh module instance so the persist middleware binds to the stub.
+    const plan = await import("./plan");
+    const foreign = plan.createPlan("Foreign", ["20269"]);
+
+    plan.applyExternalPlanState(
+      JSON.stringify({
+        state: { plans: [foreign], activePlanId: foreign.id },
+        version: plan.PLAN_STORAGE_VERSION,
+      }),
+    );
+
+    // State was applied, but nothing was echoed back into localStorage.
+    expect(plan.usePlanStore.getState().plans[0]?.id).toBe(foreign.id);
+    expect(written).toHaveLength(0);
+
+    // Ordinary local actions still persist.
+    plan.usePlanStore.getState().newPlan();
+    expect(written).toContain(plan.PLAN_STORAGE_KEY);
   });
 });

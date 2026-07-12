@@ -2,7 +2,7 @@ import { DEFAULT_RULES, type RuleConfig } from "@better-ttb/generator";
 import type { SectionCode, TeachMethod } from "@better-ttb/shared";
 import { FALL_2026, WINTER_2027, YEAR } from "@better-ttb/shared";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 
 export const PLAN_STORAGE_KEY = "better-ttb:plans:v1";
 export const PLAN_STORAGE_VERSION = 2;
@@ -40,6 +40,13 @@ interface PersistedPlanState {
   activePlanId: string;
 }
 
+export interface SectionSelection {
+  courseCode: string;
+  sectionCode: SectionCode;
+  teachMethod: TeachMethod;
+  sectionName: string;
+}
+
 interface PlanActions {
   setActivePlan: (planId: string) => void;
   setPlanSessions: (sessions: string[]) => void;
@@ -51,6 +58,8 @@ interface PlanActions {
     teachMethod: TeachMethod,
     sectionName: string,
   ) => void;
+  /** Applies many section choices in one store update (one localStorage write). */
+  chooseMany: (selections: readonly SectionSelection[]) => void;
   clearChoice: (
     courseCode: string,
     sectionCode: SectionCode,
@@ -69,6 +78,28 @@ interface PlanActions {
 }
 
 export type PlanStore = PersistedPlanState & PlanActions;
+
+// When true, persist writes are skipped. Set while applying state that came
+// from another tab's localStorage write: re-persisting an externally-sourced
+// update would fire storage events in every other tab, and with 2+ tabs those
+// echoes replay each other's (possibly stale) snapshots in a write loop.
+let suppressPersistWrite = false;
+
+const planStorage = createJSONStorage(() => {
+  // Accessing window throws during SSR; createJSONStorage catches it and
+  // disables persistence, matching zustand's default localStorage behavior.
+  const storage = window.localStorage;
+
+  return {
+    getItem: (name: string) => storage.getItem(name),
+    setItem: (name: string, value: string) => {
+      if (!suppressPersistWrite) {
+        storage.setItem(name, value);
+      }
+    },
+    removeItem: (name: string) => storage.removeItem(name),
+  };
+});
 
 export const usePlanStore = create<PlanStore>()(
   persist(
@@ -103,6 +134,22 @@ export const usePlanStore = create<PlanStore>()(
         set((state) => ({
           plans: updatePlan(state.plans, state.activePlanId, (plan) =>
             chooseSection(plan, courseCode, sectionCode, teachMethod, sectionName),
+          ),
+        })),
+      chooseMany: (selections) =>
+        set((state) => ({
+          plans: updatePlan(state.plans, state.activePlanId, (plan) =>
+            selections.reduce(
+              (updated, selection) =>
+                chooseSection(
+                  updated,
+                  selection.courseCode,
+                  selection.sectionCode,
+                  selection.teachMethod,
+                  selection.sectionName,
+                ),
+              plan,
+            ),
           ),
         })),
       clearChoice: (courseCode, sectionCode, teachMethod) =>
@@ -153,6 +200,7 @@ export const usePlanStore = create<PlanStore>()(
     {
       name: PLAN_STORAGE_KEY,
       version: PLAN_STORAGE_VERSION,
+      storage: planStorage,
       partialize: (state) => ({
         plans: state.plans,
         activePlanId: state.activePlanId,
@@ -200,9 +248,7 @@ export function applyExternalPlanState(rawValue: string | null): void {
     ? current.activePlanId
     : incoming.activePlanId;
 
-  // No-op guard: applying state re-persists it (with this tab's own
-  // activePlanId), which fires storage events in other tabs. Skipping
-  // identical updates breaks the resulting echo cycle.
+  // No-op guard: skip identical updates to avoid pointless re-renders.
   if (
     activePlanId === current.activePlanId &&
     JSON.stringify(incoming.plans) === JSON.stringify(current.plans)
@@ -210,7 +256,15 @@ export function applyExternalPlanState(rawValue: string | null): void {
     return;
   }
 
-  usePlanStore.setState({ plans: incoming.plans, activePlanId });
+  // Suppress the persist write for this update: the data is already in
+  // localStorage (another tab just wrote it), and re-writing it would fire
+  // storage events in every other tab, causing tabs to fight over the key.
+  suppressPersistWrite = true;
+  try {
+    usePlanStore.setState({ plans: incoming.plans, activePlanId });
+  } finally {
+    suppressPersistWrite = false;
+  }
 }
 
 /**
@@ -220,9 +274,14 @@ export function applyExternalPlanState(rawValue: string | null): void {
  */
 export function subscribeToPlanStorageSync(): () => void {
   const onStorage = (event: StorageEvent) => {
-    if (event.key === PLAN_STORAGE_KEY) {
-      applyExternalPlanState(event.newValue);
+    if (event.key !== PLAN_STORAGE_KEY) {
+      return;
     }
+
+    // Read the key fresh instead of trusting event.newValue: during a burst of
+    // writes, queued events carry stale snapshots, and applying one would roll
+    // this tab back to older state.
+    applyExternalPlanState(window.localStorage.getItem(PLAN_STORAGE_KEY));
   };
 
   window.addEventListener("storage", onStorage);
