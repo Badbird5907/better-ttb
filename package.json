@@ -13,11 +13,13 @@
     "dev": "turbo dev",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
-    "deploy": "turbo build && alchemy deploy alchemy.run.ts --env-file .env",
+    "deploy": "turbo build && npm run sourcemaps:upload && alchemy deploy alchemy.run.ts --env-file .env",
+    "sourcemaps:upload": "posthog-cli --dotenv-file .env sourcemap process --directory apps/web/dist/client --delete-after",
     "alchemy": "tsx alchemy.run.ts"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.44.0",
+    "@posthog/cli": "^0.8.1",
     "@types/node": "^26.1.1",
     "alchemy": "^0.93.12",
     "tsx": "^4.23.0",

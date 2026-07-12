@@ -25,6 +25,7 @@ export default defineConfig(({ command }) => {
     },
     build: {
       target: "esnext",
+      sourcemap: true,
       rollupOptions: {
         external: ["node:async_hooks", "cloudflare:workers"],
       },
