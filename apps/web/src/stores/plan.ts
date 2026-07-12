@@ -7,6 +7,7 @@ import { persist } from "zustand/middleware";
 export const PLAN_STORAGE_KEY = "better-ttb:plans:v1";
 export const PLAN_STORAGE_VERSION = 2;
 export const DEFAULT_PLAN_SESSIONS = [FALL_2026, WINTER_2027, YEAR];
+const INITIAL_PLAN_ID = "initial-plan";
 
 export type GeneratorSortKey = "score" | "walking" | "earliest-start" | "days-on-campus";
 
@@ -72,7 +73,7 @@ export type PlanStore = PersistedPlanState & PlanActions;
 export const usePlanStore = create<PlanStore>()(
   persist(
     (set, get) => ({
-      ...createInitialPlanState(),
+      ...createInitialPlanState(INITIAL_PLAN_ID),
       setActivePlan: (planId) =>
         set((state) =>
           state.plans.some((plan) => plan.id === planId)
@@ -228,8 +229,8 @@ export function subscribeToPlanStorageSync(): () => void {
   return () => window.removeEventListener("storage", onStorage);
 }
 
-export function createInitialPlanState(): PersistedPlanState {
-  const plan = createPlan("Plan 1", DEFAULT_PLAN_SESSIONS);
+export function createInitialPlanState(planId?: string): PersistedPlanState {
+  const plan = createPlan("Plan 1", DEFAULT_PLAN_SESSIONS, planId);
 
   return {
     plans: [plan],
@@ -237,9 +238,13 @@ export function createInitialPlanState(): PersistedPlanState {
   };
 }
 
-export function createPlan(name: string, sessions = DEFAULT_PLAN_SESSIONS): Plan {
+export function createPlan(
+  name: string,
+  sessions = DEFAULT_PLAN_SESSIONS,
+  id = createId(),
+): Plan {
   return {
-    id: createId(),
+    id,
     name,
     sessions: normalizeSessions(sessions),
     pinned: [],

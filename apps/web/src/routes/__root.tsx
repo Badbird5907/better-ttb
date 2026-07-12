@@ -8,7 +8,6 @@ import {
 import { PostHogProvider } from "@posthog/react";
 
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
-import { subscribeToPlanStorageSync } from "@/stores/plan";
 import appCss from "../styles/app.css?url";
 
 export const Route = createRootRoute({
@@ -30,7 +29,21 @@ export const Route = createRootRoute({
 
 function RootComponent() {
   // Client-only: keep plan state in sync with edits made in other tabs.
-  useEffect(() => subscribeToPlanStorageSync(), []);
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+
+    void import("@/stores/plan").then(({ subscribeToPlanStorageSync }) => {
+      if (!disposed) {
+        unsubscribe = subscribeToPlanStorageSync();
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, []);
 
   return (
     <RootDocument>

@@ -208,8 +208,8 @@ function TreeRoute() {
     [posthog, resolveCourseKey],
   );
 
-  const [depth, setDepth] = React.useState<DepthOption>("1");
-  const [showCoreq, setShowCoreq] = React.useState(false);
+  const [depth, setDepth] = React.useState<DepthOption>("2");
+  const [showCoreq, setShowCoreq] = React.useState(true);
   const [showRecprep, setShowRecprep] = React.useState(false);
 
   const focusCode = search.course ?? null;
