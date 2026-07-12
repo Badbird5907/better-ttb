@@ -177,7 +177,7 @@ paths:
                 additionalProperties: true
         '404':
           $ref: '#/components/responses/NotFound'
-  /api/route:
+  /api/walk-route:
     get:
       tags: [Routing]
       summary: Walking route between two UTSG buildings

@@ -23,7 +23,7 @@ const BUILDINGS_BY_CODE = new Map<string, BuildingRecord>(
 
 const OSRM_BASE = "https://routing.openstreetmap.de/routed-foot/route/v1/foot";
 
-export const Route = createFileRoute("/api")({
+export const Route = createFileRoute("/api/walk-route")({
   server: {
     handlers: {
       GET: async ({ request }) => {

@@ -1,10 +1,10 @@
 /**
- * Client-side fetcher for the `/api/route` walking-route endpoint, with a
+ * Client-side fetcher for the `/api/walk-route` walking-route endpoint, with a
  * module-scoped in-memory cache so the same building pair is only fetched once
  * per session (the server also caches permanently in KV).
  */
 
-/** A walking route returned by `/api/route`. Coordinates are `[lat, lng]`. */
+/** A walking route returned by `/api/walk-route`. Coordinates are `[lat, lng]`. */
 export interface WalkRoute {
   durationSeconds: number;
   distanceMeters: number;
@@ -37,7 +37,7 @@ export async function fetchWalkRoute(
 
   try {
     const response = await fetch(
-      `/api/route?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      `/api/walk-route?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
       signal ? { signal } : undefined,
     );
 

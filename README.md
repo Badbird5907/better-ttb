@@ -84,7 +84,7 @@ straight-line estimates:
   `routing.openstreetmap.de` (FOSSGIS). The web app flattens the relevant pairs
   into the generator's `walkSeconds` config; the `@better-ttb/generator` package
   stays data-free and falls back to a haversine estimate for unknown pairs.
-- The `/api/route` worker route fetches live walking geometry from the same OSRM
+- The `/api/walk-route` worker route fetches live walking geometry from the same OSRM
   service on demand and caches it permanently in KV (`route:v1:<from>:<to>`); the
   `/map` view draws these routes and falls back to a dashed straight line on
   failure.
