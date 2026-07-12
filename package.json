@@ -13,7 +13,7 @@
     "dev": "turbo dev",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
-    "deploy": "turbo deploy",
+    "deploy": "turbo build && alchemy deploy alchemy.run.ts --env-file .env",
     "alchemy": "tsx alchemy.run.ts"
   },
   "devDependencies": {

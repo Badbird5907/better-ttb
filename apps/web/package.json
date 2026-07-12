@@ -7,8 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "typecheck": "tsr generate && tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
-    "deploy": "alchemy deploy ../../alchemy.run.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "@better-ttb/generator": "0.0.0",

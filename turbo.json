@@ -30,12 +30,6 @@
       "outputs": [
         "coverage/**"
       ]
-    },
-    "deploy": {
-      "dependsOn": [
-        "build"
-      ],
-      "cache": false
     }
   }
 }
