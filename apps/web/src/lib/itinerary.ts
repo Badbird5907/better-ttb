@@ -1,5 +1,8 @@
 import { walkMinutes, type Coordinates } from "@better-ttb/generator";
 import type { DayNumber, MeetingTime } from "@better-ttb/shared";
+import { UOFT_TRANSFER_GRACE_MINUTES } from "@better-ttb/shared";
+
+import { lookupWalkSeconds } from "@/lib/walk-matrix";
 
 import {
   activeMeetingsForTerm,
@@ -54,9 +57,15 @@ export interface ItineraryMarker {
 export interface ItineraryTransfer {
   from: ItineraryStop;
   to: ItineraryStop;
-  /** Free minutes between the end of `from` and the start of `to`. */
+  /** Free minutes between the listed end of `from` and listed start of `to`. */
   gapMin: number;
-  /** Estimated walking minutes between the two buildings. */
+  /**
+   * Effective walking window: `gapMin + UOFT_TRANSFER_GRACE_MINUTES`, since UofT
+   * classes start 10 minutes after their listed time. Severity is judged against
+   * this, not the raw listed gap.
+   */
+  graceGapMin: number;
+  /** Estimated walking minutes (walk matrix preferred, haversine fallback). */
   walkMin: number;
   severity: TransferSeverity;
 }
@@ -200,18 +209,36 @@ function buildTransfers(stops: readonly ItineraryStop[]): ItineraryTransfer[] {
     }
 
     const gapMin = roundMinutes((to.startMillis - from.endMillis) / MILLIS_PER_MINUTE);
-    const walkMin = roundMinutes(walkMinutes(from.coordinates, to.coordinates));
+    const graceGapMin = roundMinutes(gapMin + UOFT_TRANSFER_GRACE_MINUTES);
+    const walkMin = roundMinutes(transferWalkMinutes(from, to));
 
     transfers.push({
       from,
       to,
       gapMin,
+      graceGapMin,
       walkMin,
-      severity: classifyTransfer(gapMin, walkMin),
+      // Severity uses the graced window: classes start 10 min after listed time.
+      severity: classifyTransfer(graceGapMin, walkMin),
     });
   }
 
   return transfers;
+}
+
+/**
+ * Walking minutes between two stops: real walk-matrix duration when the building
+ * pair is known, otherwise the haversine estimate. Keeps map labels consistent
+ * with the generator, which prefers the same matrix.
+ */
+function transferWalkMinutes(from: ItineraryStop, to: ItineraryStop): number {
+  const seconds = lookupWalkSeconds(from.buildingCode, to.buildingCode);
+
+  if (seconds !== null) {
+    return seconds / 60;
+  }
+
+  return walkMinutes(from.coordinates, to.coordinates);
 }
 
 /**

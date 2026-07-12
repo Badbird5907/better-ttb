@@ -5,11 +5,19 @@ import { millisofdayToHHMM } from "@better-ttb/shared";
 import * as React from "react";
 
 import { useResolvedTheme } from "@/components/theme-toggle";
-import type { DayItinerary, ItineraryMarker } from "@/lib/itinerary";
+import type { DayItinerary, ItineraryMarker, ItineraryTransfer } from "@/lib/itinerary";
+import { fetchWalkRoute } from "@/lib/route-client";
 
 interface CampusMapProps {
   itinerary: DayItinerary;
 }
+
+/** Solid-polyline colours per transfer severity (tight red, warn amber, ok slate). */
+const SEVERITY_COLORS: Record<ItineraryTransfer["severity"], string> = {
+  tight: "#dc2626",
+  warn: "#d97706",
+  ok: "#334155",
+};
 
 const ST_GEORGE_CENTER: L.LatLngTuple = [43.6629, -79.3957];
 const DEFAULT_ZOOM = 15;
@@ -29,6 +37,7 @@ export function CampusMap({ itinerary }: CampusMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<L.Map | null>(null);
   const layerRef = React.useRef<L.LayerGroup | null>(null);
+  const routeLayerRef = React.useRef<L.LayerGroup | null>(null);
   const tileLayerRef = React.useRef<L.TileLayer | null>(null);
   const resolvedTheme = useResolvedTheme();
 
@@ -49,6 +58,9 @@ export function CampusMap({ itinerary }: CampusMapProps) {
       subdomains: "abcd",
     }).addTo(map);
 
+    // Route lines sit under the markers so pins stay clickable; the marker layer
+    // is added last so it paints on top.
+    routeLayerRef.current = L.layerGroup().addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
@@ -56,6 +68,7 @@ export function CampusMap({ itinerary }: CampusMapProps) {
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
+      routeLayerRef.current = null;
       tileLayerRef.current = null;
     };
   }, []);
@@ -67,12 +80,14 @@ export function CampusMap({ itinerary }: CampusMapProps) {
   React.useEffect(() => {
     const map = mapRef.current;
     const layer = layerRef.current;
+    const routeLayer = routeLayerRef.current;
 
-    if (!map || !layer) {
+    if (!map || !layer || !routeLayer) {
       return;
     }
 
     layer.clearLayers();
+    routeLayer.clearLayers();
 
     if (itinerary.markers.length === 0) {
       map.setView(ST_GEORGE_CENTER, DEFAULT_ZOOM);
@@ -93,17 +108,48 @@ export function CampusMap({ itinerary }: CampusMapProps) {
         .addTo(layer);
     });
 
-    if (path.length > 1) {
-      L.polyline(path, {
-        color: "#334155",
-        weight: 3,
-        opacity: 0.7,
-        dashArray: "6 8",
-      }).addTo(layer);
-    }
-
     const bounds = L.latLngBounds(path as L.LatLngTuple[]);
     map.fitBounds(bounds, { padding: [48, 48], maxZoom: 17 });
+
+    // Cancel any in-flight route fetches when the day/term (itinerary) changes.
+    const controller = new AbortController();
+
+    itinerary.transfers.forEach((transfer) => {
+      const color = SEVERITY_COLORS[transfer.severity];
+      const from: L.LatLngTuple = [transfer.from.coordinates.lat, transfer.from.coordinates.lng];
+      const to: L.LatLngTuple = [transfer.to.coordinates.lat, transfer.to.coordinates.lng];
+
+      // Immediate fallback: a dashed straight line while the real route loads (or
+      // permanently, if the routing endpoint fails).
+      const fallback = L.polyline([from, to], {
+        color,
+        weight: 3,
+        opacity: 0.6,
+        dashArray: "6 8",
+      }).addTo(routeLayer);
+
+      void fetchWalkRoute(transfer.from.buildingCode, transfer.to.buildingCode, controller.signal)
+        .then((route) => {
+          if (controller.signal.aborted || !route || route.coordinates.length < 2) {
+            return;
+          }
+
+          // Upgrade to the solid, real walking geometry.
+          routeLayer.removeLayer(fallback);
+          L.polyline(route.coordinates as L.LatLngTuple[], {
+            color,
+            weight: 4,
+            opacity: 0.85,
+          }).addTo(routeLayer);
+        })
+        .catch(() => {
+          // Keep the dashed fallback on any unexpected failure.
+        });
+    });
+
+    return () => {
+      controller.abort();
+    };
   }, [itinerary]);
 
   return <div ref={containerRef} className="h-full w-full" />;

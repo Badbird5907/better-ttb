@@ -1,4 +1,5 @@
 import type { DayNumber, MeetingTime } from "@better-ttb/shared";
+import { UOFT_TRANSFER_GRACE_MINUTES, walkSecondsFromMap } from "@better-ttb/shared";
 
 import type {
   CandidateExtras,
@@ -43,7 +44,13 @@ interface Transfer {
   day: DayNumber;
   from: string;
   to: string;
+  /** Listed-time gap: `next.start - prev.end`. Used for tight-transfer selection. */
   gapMin: number;
+  /**
+   * Walk-feasibility window: `gapMin + UOFT_TRANSFER_GRACE_MINUTES`, since UofT
+   * classes start 10 min after their listed time. Used only for walkability.
+   */
+  feasibilityGapMin: number;
   walkMin: number | null;
 }
 
@@ -64,6 +71,7 @@ const MAX_REASONABLE_DAY_SPAN_MINUTES = 14 * 60;
 export function buildEvaluationContext(
   selectedSections: readonly SelectedSection[],
   buildings?: Record<string, Coordinates>,
+  walkSeconds?: Record<string, number>,
 ): EvaluationContext {
   const meetingsByTerm: Record<Term, ScheduledMeeting[]> = {
     fall: [],
@@ -103,7 +111,7 @@ export function buildEvaluationContext(
       : Math.min(...allMeetings.map((meeting) => meeting.startMillis));
   const latestEnd =
     allMeetings.length === 0 ? null : Math.max(...allMeetings.map((meeting) => meeting.endMillis));
-  const transfers = buildTransfers(meetingsByTerm, buildings);
+  const transfers = buildTransfers(meetingsByTerm, buildings, walkSeconds);
   const totalWalkMinutesPerDay = makeDayRecord(0);
   const tightTransfers: TightTransfer[] = [];
 
@@ -282,11 +290,15 @@ function evaluateMaxWalk(
       );
     }
 
-    if (transfer.walkMin > transfer.gapMin) {
+    // Feasibility uses the graced window (listed gap + 10 min UofT start delay),
+    // not the listed gap, since classes start 10 minutes late.
+    if (transfer.walkMin > transfer.feasibilityGapMin) {
       impossible += 1;
       worstPenalty = Math.max(
         worstPenalty,
-        transfer.gapMin <= 0 ? 1 : (transfer.walkMin - transfer.gapMin) / transfer.gapMin,
+        transfer.feasibilityGapMin <= 0
+          ? 1
+          : (transfer.walkMin - transfer.feasibilityGapMin) / transfer.feasibilityGapMin,
       );
     }
   }
@@ -575,6 +587,7 @@ function evaluatePreferInstructor(
 function buildTransfers(
   meetingsByTerm: Record<Term, ScheduledMeeting[]>,
   buildings?: Record<string, Coordinates>,
+  walkSeconds?: Record<string, number>,
 ): Transfer[] {
   const transfers: Transfer[] = [];
 
@@ -600,7 +613,8 @@ function buildTransfers(
           from: current.label,
           to: next.label,
           gapMin,
-          walkMin: transferWalkMinutes(current, next, buildings),
+          feasibilityGapMin: gapMin + UOFT_TRANSFER_GRACE_MINUTES,
+          walkMin: transferWalkMinutes(current, next, buildings, walkSeconds),
         });
       }
     }
@@ -620,12 +634,22 @@ function transferWalkMinutes(
   current: ScheduledMeeting,
   next: ScheduledMeeting,
   buildings?: Record<string, Coordinates>,
+  walkSeconds?: Record<string, number>,
 ): number | null {
   const currentCode = current.meeting.building.buildingCode;
   const nextCode = next.meeting.building.buildingCode;
 
   if (currentCode && nextCode && currentCode === nextCode) {
     return 0;
+  }
+
+  // Prefer real pedestrian durations from the walk matrix when both codes are
+  // present and the pair is known; fall back to the haversine estimate.
+  if (currentCode && nextCode) {
+    const seconds = walkSecondsFromMap(walkSeconds, currentCode, nextCode);
+    if (seconds !== null) {
+      return seconds / 60;
+    }
   }
 
   const currentCoordinates = currentCode ? buildings?.[currentCode] : undefined;

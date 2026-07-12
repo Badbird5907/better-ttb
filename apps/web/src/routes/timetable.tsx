@@ -1,6 +1,7 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import type {
   CandidateTimetable,
+  CourseInput,
   GenerationResult,
   GeneratorConfig,
   RuleConfig,
@@ -34,6 +35,7 @@ import {
 } from "@/components/timetable/GeneratePanelContent";
 import { BUILDING_INDEX } from "@/lib/buildings";
 import { daysWithClasses, hasTightTransfer } from "@/lib/itinerary";
+import { buildWalkSecondsMap } from "@/lib/walk-matrix";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -286,6 +288,9 @@ function TimetableRoute() {
     }
 
     workerRef.current?.terminate();
+    // Only flatten walk-matrix pairs among the buildings that actually appear in
+    // this plan's courses, keeping the worker message small.
+    const walkSeconds = buildWalkSecondsMap(buildingCodesFromCourseInputs(courses));
     const request: GeneratorWorkerRequest = {
       type: "generate",
       id: createRequestId(),
@@ -295,6 +300,7 @@ function TimetableRoute() {
         maxResults: 12,
         maxCombinations: 500_000,
         buildings: buildingCoordinates,
+        walkSeconds,
       } satisfies GeneratorConfig,
     };
     const worker = new Worker(new URL("../workers/generator.worker.ts", import.meta.url), {
@@ -1498,6 +1504,24 @@ function downloadText(filename: string, type: string, content: string) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function buildingCodesFromCourseInputs(courses: readonly CourseInput[]): string[] {
+  const codes = new Set<string>();
+
+  for (const input of courses) {
+    for (const section of input.course.sections) {
+      for (const meeting of section.meetingTimes) {
+        const code = meeting.building.buildingCode.trim();
+
+        if (code) {
+          codes.add(code);
+        }
+      }
+    }
+  }
+
+  return [...codes];
 }
 
 function createRequestId(): string {

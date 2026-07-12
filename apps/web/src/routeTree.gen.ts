@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TimetableRouteImport } from './routes/timetable'
 import { Route as MapRouteImport } from './routes/map'
+import { Route as ApiRouteRouteImport } from './routes/api/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PIdRouteImport } from './routes/p.$id'
 import { Route as ApiShareRouteImport } from './routes/api/share'
@@ -31,6 +32,11 @@ const MapRoute = MapRouteImport.update({
   path: '/map',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRouteRoute = ApiRouteRouteImport.update({
+  id: '/api',
+  path: '/api',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -42,24 +48,24 @@ const PIdRoute = PIdRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiShareRoute = ApiShareRouteImport.update({
-  id: '/api/share',
-  path: '/api/share',
-  getParentRoute: () => rootRouteImport,
+  id: '/share',
+  path: '/share',
+  getParentRoute: () => ApiRouteRoute,
 } as any)
 const ApiReferenceDataRoute = ApiReferenceDataRouteImport.update({
-  id: '/api/reference-data',
-  path: '/api/reference-data',
-  getParentRoute: () => rootRouteImport,
+  id: '/reference-data',
+  path: '/reference-data',
+  getParentRoute: () => ApiRouteRoute,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
-  id: '/api/health',
-  path: '/api/health',
-  getParentRoute: () => rootRouteImport,
+  id: '/health',
+  path: '/health',
+  getParentRoute: () => ApiRouteRoute,
 } as any)
 const ApiCatalogRoute = ApiCatalogRouteImport.update({
-  id: '/api/catalog',
-  path: '/api/catalog',
-  getParentRoute: () => rootRouteImport,
+  id: '/catalog',
+  path: '/catalog',
+  getParentRoute: () => ApiRouteRoute,
 } as any)
 const ApiShareIdRoute = ApiShareIdRouteImport.update({
   id: '/$id',
@@ -67,18 +73,19 @@ const ApiShareIdRoute = ApiShareIdRouteImport.update({
   getParentRoute: () => ApiShareRoute,
 } as any)
 const ApiCourseCodeRoute = ApiCourseCodeRouteImport.update({
-  id: '/api/course/$code',
-  path: '/api/course/$code',
-  getParentRoute: () => rootRouteImport,
+  id: '/course/$code',
+  path: '/course/$code',
+  getParentRoute: () => ApiRouteRoute,
 } as any)
 const ApiAdminScrapeRoute = ApiAdminScrapeRouteImport.update({
-  id: '/api/admin/scrape',
-  path: '/api/admin/scrape',
-  getParentRoute: () => rootRouteImport,
+  id: '/admin/scrape',
+  path: '/admin/scrape',
+  getParentRoute: () => ApiRouteRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api': typeof ApiRouteRouteWithChildren
   '/map': typeof MapRoute
   '/timetable': typeof TimetableRoute
   '/api/catalog': typeof ApiCatalogRoute
@@ -92,6 +99,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api': typeof ApiRouteRouteWithChildren
   '/map': typeof MapRoute
   '/timetable': typeof TimetableRoute
   '/api/catalog': typeof ApiCatalogRoute
@@ -106,6 +114,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api': typeof ApiRouteRouteWithChildren
   '/map': typeof MapRoute
   '/timetable': typeof TimetableRoute
   '/api/catalog': typeof ApiCatalogRoute
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/api'
     | '/map'
     | '/timetable'
     | '/api/catalog'
@@ -134,6 +144,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/api'
     | '/map'
     | '/timetable'
     | '/api/catalog'
@@ -147,6 +158,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/api'
     | '/map'
     | '/timetable'
     | '/api/catalog'
@@ -161,15 +173,10 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiRouteRoute: typeof ApiRouteRouteWithChildren
   MapRoute: typeof MapRoute
   TimetableRoute: typeof TimetableRoute
-  ApiCatalogRoute: typeof ApiCatalogRoute
-  ApiHealthRoute: typeof ApiHealthRoute
-  ApiReferenceDataRoute: typeof ApiReferenceDataRoute
-  ApiShareRoute: typeof ApiShareRouteWithChildren
   PIdRoute: typeof PIdRoute
-  ApiAdminScrapeRoute: typeof ApiAdminScrapeRoute
-  ApiCourseCodeRoute: typeof ApiCourseCodeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -188,6 +195,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MapRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api': {
+      id: '/api'
+      path: '/api'
+      fullPath: '/api'
+      preLoaderRoute: typeof ApiRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -204,31 +218,31 @@ declare module '@tanstack/react-router' {
     }
     '/api/share': {
       id: '/api/share'
-      path: '/api/share'
+      path: '/share'
       fullPath: '/api/share'
       preLoaderRoute: typeof ApiShareRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof ApiRouteRoute
     }
     '/api/reference-data': {
       id: '/api/reference-data'
-      path: '/api/reference-data'
+      path: '/reference-data'
       fullPath: '/api/reference-data'
       preLoaderRoute: typeof ApiReferenceDataRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof ApiRouteRoute
     }
     '/api/health': {
       id: '/api/health'
-      path: '/api/health'
+      path: '/health'
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof ApiRouteRoute
     }
     '/api/catalog': {
       id: '/api/catalog'
-      path: '/api/catalog'
+      path: '/catalog'
       fullPath: '/api/catalog'
       preLoaderRoute: typeof ApiCatalogRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof ApiRouteRoute
     }
     '/api/share/$id': {
       id: '/api/share/$id'
@@ -239,17 +253,17 @@ declare module '@tanstack/react-router' {
     }
     '/api/course/$code': {
       id: '/api/course/$code'
-      path: '/api/course/$code'
+      path: '/course/$code'
       fullPath: '/api/course/$code'
       preLoaderRoute: typeof ApiCourseCodeRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof ApiRouteRoute
     }
     '/api/admin/scrape': {
       id: '/api/admin/scrape'
-      path: '/api/admin/scrape'
+      path: '/admin/scrape'
       fullPath: '/api/admin/scrape'
       preLoaderRoute: typeof ApiAdminScrapeRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof ApiRouteRoute
     }
   }
 }
@@ -266,17 +280,34 @@ const ApiShareRouteWithChildren = ApiShareRoute._addFileChildren(
   ApiShareRouteChildren,
 )
 
-const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  MapRoute: MapRoute,
-  TimetableRoute: TimetableRoute,
+interface ApiRouteRouteChildren {
+  ApiCatalogRoute: typeof ApiCatalogRoute
+  ApiHealthRoute: typeof ApiHealthRoute
+  ApiReferenceDataRoute: typeof ApiReferenceDataRoute
+  ApiShareRoute: typeof ApiShareRouteWithChildren
+  ApiAdminScrapeRoute: typeof ApiAdminScrapeRoute
+  ApiCourseCodeRoute: typeof ApiCourseCodeRoute
+}
+
+const ApiRouteRouteChildren: ApiRouteRouteChildren = {
   ApiCatalogRoute: ApiCatalogRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiReferenceDataRoute: ApiReferenceDataRoute,
   ApiShareRoute: ApiShareRouteWithChildren,
-  PIdRoute: PIdRoute,
   ApiAdminScrapeRoute: ApiAdminScrapeRoute,
   ApiCourseCodeRoute: ApiCourseCodeRoute,
+}
+
+const ApiRouteRouteWithChildren = ApiRouteRoute._addFileChildren(
+  ApiRouteRouteChildren,
+)
+
+const rootRouteChildren: RootRouteChildren = {
+  IndexRoute: IndexRoute,
+  ApiRouteRoute: ApiRouteRouteWithChildren,
+  MapRoute: MapRoute,
+  TimetableRoute: TimetableRoute,
+  PIdRoute: PIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

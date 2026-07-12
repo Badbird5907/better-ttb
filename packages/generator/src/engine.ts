@@ -93,7 +93,7 @@ export function generate(
     }
 
     if (depth === orderedPlans.length) {
-      const context = buildEvaluationContext(selectedSections, config.buildings);
+      const context = buildEvaluationContext(selectedSections, config.buildings, config.walkSeconds);
 
       if (violatesHardRules(config.rules, context, { partial: false })) {
         stats.pruned += 1;
@@ -127,7 +127,7 @@ export function generate(
       }
 
       const nextSelectedSections = [...selectedSections, ...choice.selectedSections];
-      const context = buildEvaluationContext(nextSelectedSections, config.buildings);
+      const context = buildEvaluationContext(nextSelectedSections, config.buildings, config.walkSeconds);
 
       if (violatesHardRules(config.rules, context, { partial: true })) {
         stats.pruned += 1;
@@ -335,7 +335,7 @@ function findPairwiseInfeasible(
 ): string[] | null {
   for (const plan of plans) {
     const hasSingleFeasibleChoice = plan.choices.some((choice) => {
-      const context = buildEvaluationContext(choice.selectedSections, config.buildings);
+      const context = buildEvaluationContext(choice.selectedSections, config.buildings, config.walkSeconds);
       return !violatesHardRules(config.rules, context, { partial: false });
     });
 
@@ -368,7 +368,7 @@ function findPairwiseInfeasible(
             ...firstChoice.selectedSections,
             ...secondChoice.selectedSections,
           ];
-          const context = buildEvaluationContext(selectedSections, config.buildings);
+          const context = buildEvaluationContext(selectedSections, config.buildings, config.walkSeconds);
 
           if (!violatesHardRules(config.rules, context, { partial: false })) {
             compatible = true;

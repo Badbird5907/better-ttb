@@ -64,9 +64,13 @@ describe("buildDayItinerary", () => {
     const transfer = itinerary.transfers[0]!;
     expect(transfer.gapMin).toBe(0);
     expect(transfer.walkMin).toBeGreaterThan(0);
+    // BA->MP is 285s (4.75 min) in the walk matrix.
+    expect(transfer.walkMin).toBeCloseTo(4.75, 1);
     expect(itinerary.totalWalkMinutes).toBe(transfer.walkMin);
-    // Zero gap but a nonzero walk means it cannot be made in time.
-    expect(transfer.severity).toBe("tight");
+    // 10-min UofT grace turns a 0-min listed gap into a 10-min window, and the
+    // ~4.75-min BA->MP walk fits comfortably within it.
+    expect(transfer.graceGapMin).toBe(10);
+    expect(transfer.severity).toBe("ok");
   });
 
   it("classifies transfers as ok, warn, and tight", () => {

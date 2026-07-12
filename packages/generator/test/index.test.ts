@@ -151,6 +151,9 @@ describe("rule evaluation", () => {
       A: { lat: 43.6605, lng: -79.395 },
       B: { lat: 43.6675, lng: -79.391 },
     };
+    // Real walk durations: A->B is 40 min, far beyond the graced 15-min window
+    // (5-min listed gap + 10-min UofT grace), so the transfer is impossible.
+    const walkSeconds = { "A|B": 40 * 60, "B|A": 40 * 60 };
     const rule: RuleConfig = {
       id: "walk",
       kind: "max-walk",
@@ -165,17 +168,63 @@ describe("rule evaluation", () => {
     const soft = generate([{ course: first }, { course: second }], {
       rules: [rule],
       buildings,
+      walkSeconds,
     });
 
     expect(soft.candidates[0]?.metrics[0]?.detail).toContain("1 impossible transfers");
     expect(soft.candidates[0]?.extras.tightTransfers).toHaveLength(1);
+    // The reported walk uses the real 40-min matrix duration, not haversine.
+    expect(soft.candidates[0]?.extras.tightTransfers[0]?.walkMin).toBe(40);
 
     const hard = generate([{ course: first }, { course: second }], {
       rules: [{ ...rule, mode: "hard" }],
       buildings,
+      walkSeconds,
     });
 
     expect(hard.candidates).toHaveLength(0);
+  });
+
+  it("applies the 10-minute UofT grace to back-to-back walk feasibility", () => {
+    // Two classes with a 0-minute listed gap (prev ends 11:00, next starts 11:00).
+    const first = course("GRC100H1", "F", [
+      section("LEC0101", "LEC", [meeting(1, ms(10), ms(11), { buildingCode: "A" })]),
+    ]);
+    const second = course("GRC200H1", "F", [
+      section("LEC0101", "LEC", [meeting(1, ms(11), ms(12), { buildingCode: "B" })]),
+    ]);
+    const buildings = {
+      A: { lat: 43.6605, lng: -79.395 },
+      B: { lat: 43.6675, lng: -79.391 },
+    };
+    const rule: RuleConfig = {
+      id: "walk",
+      kind: "max-walk",
+      mode: "hard",
+      weight: 1,
+      maxWalkMinutes: 30,
+    };
+
+    // 8-min walk into a 0-min listed gap is OK because the 10-min grace makes the
+    // real window 10 min.
+    const okWalk = generate([{ course: first }, { course: second }], {
+      rules: [rule],
+      buildings,
+      walkSeconds: { "A|B": 8 * 60, "B|A": 8 * 60 },
+    });
+
+    expect(okWalk.candidates).toHaveLength(1);
+    expect(okWalk.candidates[0]?.extras.tightTransfers[0]?.walkMin).toBe(8);
+
+    // 12-min walk into the same 0-min gap exceeds the 10-min graced window: tight
+    // and, as a hard rule, a violation that removes the candidate.
+    const tightWalk = generate([{ course: first }, { course: second }], {
+      rules: [rule],
+      buildings,
+      walkSeconds: { "A|B": 12 * 60, "B|A": 12 * 60 },
+    });
+
+    expect(tightWalk.candidates).toHaveLength(0);
   });
 
   it("handles blocked windows, earliest/latest bounds, days off, and lunch breaks", () => {

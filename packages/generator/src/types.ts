@@ -98,6 +98,13 @@ export interface GeneratorConfig {
   maxResults?: number;
   maxCombinations?: number;
   buildings?: Record<string, Coordinates>;
+  /**
+   * Real pedestrian walking durations between buildings as a flat
+   * `"FROM|TO" -> seconds` map (see `WalkSecondsMap` in `@better-ttb/shared`).
+   * When present, back-to-back walk feasibility prefers these durations and
+   * falls back to the haversine `walkMinutes` estimate for unknown pairs.
+   */
+  walkSeconds?: Record<string, number>;
 }
 
 export interface Selection {

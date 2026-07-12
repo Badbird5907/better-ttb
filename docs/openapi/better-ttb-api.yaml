@@ -19,6 +19,7 @@ tags:
   - name: Courses
   - name: Reference Data
   - name: Sharing
+  - name: Routing
   - name: Admin
 paths:
   /api/catalog:
@@ -176,6 +177,78 @@ paths:
                 additionalProperties: true
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/route:
+    get:
+      tags: [Routing]
+      summary: Walking route between two UTSG buildings
+      description: |
+        Returns the pedestrian walking route between two St. George buildings, sourced from the
+        OSRM foot profile at `routing.openstreetmap.de` (FOSSGIS), over OpenStreetMap data (ODbL).
+
+        Coordinates are returned as `[lat, lng]` pairs (converted from OSRM's GeoJSON `lng,lat`
+        ordering). Results are cached permanently in KV under `route:v1:<from>:<to>` and served with
+        `Cache-Control: public, max-age=31536000`, since campus walking geometry does not change.
+      operationId: getRoute
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Origin building code (validated against the UTSG buildings dataset).
+          schema: {type: string, example: BA}
+        - name: to
+          in: query
+          required: true
+          description: Destination building code (validated against the UTSG buildings dataset).
+          schema: {type: string, example: MP}
+      responses:
+        '200':
+          description: Walking route.
+          headers:
+            Cache-Control:
+              schema: {type: string}
+              description: 'Always `public, max-age=31536000`.'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [durationSeconds, distanceMeters, coordinates]
+                properties:
+                  durationSeconds:
+                    type: integer
+                    description: Estimated walking duration in whole seconds.
+                  distanceMeters:
+                    type: integer
+                    description: Route length in whole metres.
+                  coordinates:
+                    type: array
+                    description: Ordered `[lat, lng]` points describing the route polyline.
+                    items:
+                      type: array
+                      minItems: 2
+                      maxItems: 2
+                      items: {type: number}
+              example:
+                durationSeconds: 205
+                distanceMeters: 240
+                coordinates:
+                  - [43.6577, -79.3961]
+                  - [43.6588, -79.3948]
+        '400':
+          description: Unknown or missing building code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: invalid_building_code
+        '502':
+          description: Upstream OSRM routing failure; clients should fall back to a straight line.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: routing_upstream_error
   /api/admin/scrape:
     post:
       tags: [Admin]

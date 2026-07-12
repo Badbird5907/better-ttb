@@ -207,6 +207,10 @@ function WalkPanel({ itinerary }: { itinerary: DayItinerary }) {
           ))
         )}
       </div>
+
+      <p className="border-t px-4 py-3 text-[11px] text-muted-foreground">
+        Walking routes © OSRM/OpenStreetMap
+      </p>
     </aside>
   );
 }
@@ -244,7 +248,12 @@ function TransferRow({ transfer }: { transfer: ItineraryTransfer }) {
         />
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-        <Badge variant="secondary">gap {Math.round(transfer.gapMin)} min</Badge>
+        <Badge variant="secondary">
+          {Math.round(transfer.gapMin) === 0
+            ? // Back-to-back listed times still leave the 10-min UofT grace window.
+              `gap ${Math.round(transfer.graceGapMin)} min (UofT time)`
+            : `gap ${Math.round(transfer.gapMin)} min`}
+        </Badge>
         <Badge variant="secondary">walk ~{Math.round(transfer.walkMin)} min</Badge>
         {tight && (
           <span className="inline-flex items-center gap-1 font-medium text-destructive">

@@ -72,3 +72,25 @@ curl -X POST https://<your-worker>/api/admin/scrape \
 Turborepo workspace: a TanStack Start (React 19 + Tailwind v4 + shadcn/ui) app
 in `apps/web` with server routes on Cloudflare Workers (D1 + KV), sharing
 `@better-ttb/shared` types and the `@better-ttb/generator` scheduling engine.
+
+### Walking distances and routes
+
+Back-to-back class walkability uses real pedestrian durations rather than
+straight-line estimates:
+
+- `tools/walk-matrix.json` (vendored to `apps/web/src/data/walk-matrix.json`) is
+  a precomputed `codes × codes` matrix of foot-profile walking seconds between
+  every UTSG building, generated from the OSRM foot profile at
+  `routing.openstreetmap.de` (FOSSGIS). The web app flattens the relevant pairs
+  into the generator's `walkSeconds` config; the `@better-ttb/generator` package
+  stays data-free and falls back to a haversine estimate for unknown pairs.
+- The `/api/route` worker route fetches live walking geometry from the same OSRM
+  service on demand and caches it permanently in KV (`route:v1:<from>:<to>`); the
+  `/map` view draws these routes and falls back to a dashed straight line on
+  failure.
+- UofT classes start 10 minutes after their listed time
+  (`UOFT_TRANSFER_GRACE_MINUTES` in `@better-ttb/shared`), so transfer
+  feasibility is judged against `(next listed start + 10 min) − prev listed end`.
+
+Routing and matrix data derive from OpenStreetMap (© OpenStreetMap
+contributors, ODbL) via OSRM.
