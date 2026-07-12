@@ -14,6 +14,7 @@
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "deploy": "turbo build && npm run sourcemaps:upload && alchemy deploy alchemy.run.ts --env-file .env",
+    "deploy:ci": "turbo build && npm run sourcemaps:upload && alchemy deploy alchemy.run.ts",
     "sourcemaps:upload": "posthog-cli --dotenv-file .env sourcemap process --directory apps/web/dist/client --delete-after",
     "alchemy": "tsx alchemy.run.ts"
   },
