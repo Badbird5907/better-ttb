@@ -20,6 +20,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@better-ttb/shared": "0.0.0"
+    "@better-ttb/shared": "workspace:*"
   }
 }

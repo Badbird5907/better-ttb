@@ -20,29 +20,32 @@ Science course timetables, running on Cloudflare Workers.
 
 ## Setup
 
+This repo uses pnpm (pinned via the `packageManager` field). If pnpm isn't on
+your PATH, run `corepack enable` once — modern Node ships with Corepack.
+
 ```sh
-npm install
+pnpm install
 ```
 
 ## Commands
 
 ```sh
-npm run dev
-npm run typecheck
-npm run test
-npm run build
-npm run alchemy
+pnpm dev
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm alchemy
 ```
 
-`apps/web` is a TanStack Start app targeting Cloudflare Workers through Alchemy. The build script uses plain `vite build`; Alchemy resource deployment is handled by `npm run alchemy`.
+`apps/web` is a TanStack Start app targeting Cloudflare Workers through Alchemy. The build script uses plain `vite build`; Alchemy resource deployment is handled by `pnpm alchemy`.
 
-The Alchemy Vite plugin requires Alchemy's generated `.alchemy/local/wrangler.jsonc`. Standalone `npm run build` skips that plugin; `npm run alchemy` enables it through Alchemy's build environment.
+The Alchemy Vite plugin requires Alchemy's generated `.alchemy/local/wrangler.jsonc`. Standalone `pnpm build` skips that plugin; `pnpm alchemy` enables it through Alchemy's build environment.
 
 ## Deploy
 
 Deployment provisions the Worker, D1 database, and KV namespace via Alchemy.
 
-One-time setup: `npx alchemy configure` (select Cloudflare, OAuth login), then
+One-time setup: `pnpm exec alchemy configure` (select Cloudflare, OAuth login), then
 create a root `.env` (gitignored) with:
 
 ```
@@ -53,10 +56,13 @@ ALCHEMY_PASSWORD=<secret>   # encrypts secrets in Alchemy state — keep stable 
 Then:
 
 ```sh
-set -a && source .env && set +a && npm run deploy
+set -a && source .env && set +a && pnpm run deploy
 ```
 
-Note: deploy must go through the `alchemy` CLI (the npm script does), not plain
+(Use `pnpm run deploy`, not `pnpm deploy` — the latter is pnpm's built-in
+deploy command, not this script.)
+
+Note: deploy must go through the `alchemy` CLI (the pnpm script does), not plain
 `tsx alchemy.run.ts` — the CLI generates `.alchemy/local/wrangler.jsonc`, which
 the Alchemy Vite plugin requires during the build.
 After the first deploy the catalog is empty — populate it by calling the admin

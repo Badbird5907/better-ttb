@@ -10,8 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@better-ttb/generator": "0.0.0",
-    "@better-ttb/shared": "0.0.0",
+    "@better-ttb/generator": "workspace:*",
+    "@better-ttb/shared": "workspace:*",
     "@posthog/react": "^1.10.3",
     "@radix-ui/react-dialog": "^1.1.19",
     "@radix-ui/react-popover": "^1.1.19",

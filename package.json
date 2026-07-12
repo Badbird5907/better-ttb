@@ -3,18 +3,14 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "packageManager": "npm@11.12.1",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "packageManager": "pnpm@11.12.0",
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
-    "deploy": "turbo build && npm run sourcemaps:upload && alchemy deploy alchemy.run.ts --env-file .env",
-    "deploy:ci": "turbo build && npm run sourcemaps:upload && alchemy deploy alchemy.run.ts",
+    "deploy": "turbo build && pnpm run sourcemaps:upload && alchemy deploy alchemy.run.ts --env-file .env",
+    "deploy:ci": "turbo build && pnpm run sourcemaps:upload && alchemy deploy alchemy.run.ts",
     "sourcemaps:upload": "posthog-cli --dotenv-file .env sourcemap process --directory apps/web/dist/client --delete-after",
     "alchemy": "tsx alchemy.run.ts"
   },
