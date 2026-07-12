@@ -46,7 +46,6 @@ import {
   getCourseDeliveryModes,
   hasActiveFilters,
   hasAvailableSpace,
-  isWaitlistable,
   searchCourses,
 } from "@/lib/search";
 import {
@@ -1185,7 +1184,9 @@ function CourseResultRow({
 }) {
   const breadths = getCourseBreadthCodes(course);
   const full = course.primaryFull || !hasAvailableSpace(course);
-  const waitlistable = isWaitlistable(course);
+  const waitlistedCount = course.sections.filter(isSectionWaitlisted).length;
+  const waitlistedRatio =
+    course.sections.length > 0 ? waitlistedCount / course.sections.length : 0;
 
   return (
     <div className="h-[124px] px-3 py-2">
@@ -1213,7 +1214,20 @@ function CourseResultRow({
               </Badge>
             ))}
             {full && <Badge variant="destructive">Full</Badge>}
-            {waitlistable && <Badge variant="outline">Waitlist</Badge>}
+            {waitlistedCount > 0 && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  waitlistedRatio === 1
+                    ? "border-red-600/50 text-red-700 dark:text-red-400"
+                    : waitlistedRatio < 0.2
+                      ? "border-green-600/50 text-green-700 dark:text-green-400"
+                      : "border-amber-600/50 text-amber-700 dark:text-amber-400",
+                )}
+              >
+                Waitlist ({waitlistedCount})
+              </Badge>
+            )}
           </div>
         </div>
         <Button
