@@ -48,5 +48,15 @@
     "event_name": "share_created",
     "event_description": "Server successfully creates a shareable plan link and stores it in KV.",
     "file": "apps/web/src/routes/api/share.ts"
+  },
+  {
+    "event_name": "requisite_course_opened",
+    "event_description": "User clicks a course chip in a requisite view or mini prereq tree to open that course's detail sheet.",
+    "file": "apps/web/src/routes/index.tsx"
+  },
+  {
+    "event_name": "prereq_tree_course_focused",
+    "event_description": "User views a course's prerequisite tree on the /tree page (via picker, node click, or a shared ?course= link).",
+    "file": "apps/web/src/routes/tree.tsx"
   }
 ]

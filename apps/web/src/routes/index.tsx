@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { usePostHog } from "@posthog/react";
 import { detectConflicts } from "@better-ttb/generator";
 import type {
@@ -11,12 +11,7 @@ import type {
   TeachMethod,
   TtbCourseLookupResponse,
 } from "@better-ttb/shared";
-import {
-  formatDay,
-  formatSessionLabel,
-  millisofdayToHHMM,
-  parseSessionCode,
-} from "@better-ttb/shared";
+import { formatSessionLabel, parseSessionCode } from "@better-ttb/shared";
 import {
   Check,
   ChevronsUpDown,
@@ -35,9 +30,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
-import buildings from "@/data/buildings.json";
 import { AppNav, MobileNav } from "@/components/app-nav";
-import { ProfRating } from "@/components/prof-rating";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   DAY_FILTERS,
@@ -52,11 +45,19 @@ import {
   isWaitlistable,
   searchCourses,
 } from "@/lib/search";
-import { sanitizeHtml } from "@/lib/sanitize";
 import {
   sectionConflictsWithPlan,
   type PlanSelectedSection,
 } from "@/lib/timetable";
+import { useRequisiteGraph } from "@/lib/requisites/use-graph";
+import {
+  CourseDetailSheet,
+  SectionBadge,
+  formatBreadth,
+  formatMeetingTime,
+  formatRoom,
+  getTeachMethods,
+} from "@/components/course/course-detail-sheet";
 import { cn } from "@/lib/utils";
 import { useCatalogStore } from "@/stores/catalog";
 import {
@@ -91,13 +92,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -107,23 +101,22 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+export interface HomeSearch {
+  course?: string;
+}
+
 export const Route = createFileRoute("/")({
+  validateSearch: (search: Record<string, unknown>): HomeSearch => {
+    const course = typeof search.course === "string" ? search.course : undefined;
+
+    return course ? { course } : {};
+  },
   head: () => ({ meta: [{ title: "Search · better-ttb" }] }),
   component: Home,
 });
 
 const RESULT_ROW_HEIGHT = 124;
 const RESULT_OVERSCAN = 5;
-
-interface BuildingRecord {
-  code: string;
-  name: string;
-  shortName: string;
-  address: string;
-  lat: number;
-  lng: number;
-  source: string;
-}
 
 type Term = "fall" | "winter";
 type ArrayFilterKey =
@@ -134,10 +127,6 @@ type ArrayFilterKey =
   | "creditWeights"
   | "breadthCodes"
   | "days";
-
-const buildingByCode = new Map(
-  (buildings as BuildingRecord[]).map((building) => [building.code, building]),
-);
 
 function Home() {
   const posthog = usePostHog();
@@ -171,6 +160,9 @@ function Home() {
   const [selectedCourseKey, setSelectedCourseKey] = React.useState<string | null>(
     null,
   );
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const searchCourseParam = search.course;
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [mobileTab, setMobileTab] = React.useState<"search" | "pinned">("search");
   const [liveCourses, setLiveCourses] = React.useState<Map<string, Course>>(
@@ -251,6 +243,11 @@ function Home() {
 
     return map;
   }, [catalog, liveCourses]);
+  const graph = useRequisiteGraph(catalog?.courses);
+  const resolveCourseKey = React.useCallback(
+    (value: string): string | null => resolveKey(value, coursesByKey),
+    [coursesByKey],
+  );
   const results = React.useMemo(
     () =>
       searchIndex
@@ -284,6 +281,35 @@ function Home() {
     () => collectPlanSelectedSections(activePlan, coursesByKey),
     [activePlan, coursesByKey],
   );
+
+  // URL -> selection: resolve the `course` param once the catalog is ready.
+  React.useEffect(() => {
+    if (searchCourseParam === undefined || coursesByKey.size === 0) {
+      return;
+    }
+
+    const resolved = resolveCourseKey(searchCourseParam);
+
+    if (resolved && resolved !== selectedCourseKey) {
+      setSelectedCourseKey(resolved);
+    }
+  }, [searchCourseParam, coursesByKey, resolveCourseKey, selectedCourseKey]);
+
+  // Selection -> URL: mirror the open course (full key) into `?course=`, and
+  // drop the param on close. Only navigate when the param actually differs, so
+  // we never fight the URL->selection effect above.
+  React.useEffect(() => {
+    if (selectedCourseKey) {
+      if (searchCourseParam !== selectedCourseKey) {
+        void navigate({
+          search: { course: selectedCourseKey },
+          replace: true,
+        });
+      }
+    } else if (searchCourseParam !== undefined) {
+      void navigate({ search: {}, replace: true });
+    }
+  }, [selectedCourseKey, searchCourseParam, navigate]);
   const sessionOptions = React.useMemo(
     () =>
       mergeSessionOptions([
@@ -382,6 +408,14 @@ function Home() {
     });
   }
 
+  function togglePinCourse(course: Course) {
+    if (isCoursePinned(activePlan, course.code, course.sectionCode)) {
+      unpinCourse(course.code, course.sectionCode);
+    } else {
+      pinCourse(course.code, course.sectionCode);
+    }
+  }
+
   function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (results.length === 0) {
       return;
@@ -408,6 +442,13 @@ function Home() {
       event.preventDefault();
       event.stopPropagation();
       setSelectedCourseKey(courseKey(activeCourse));
+      return;
+    }
+
+    if ((event.key === "p" || event.key === "P") && activeCourse) {
+      event.preventDefault();
+      event.stopPropagation();
+      togglePinCourse(activeCourse);
     }
   }
 
@@ -547,6 +588,17 @@ function Home() {
           onPin={(course) => pinCourse(course.code, course.sectionCode)}
           onUnpin={(course) => unpinCourse(course.code, course.sectionCode)}
           onRefresh={refreshSeats}
+          onOpenCourse={(code) => {
+            const key = resolveCourseKey(code);
+
+            if (key) {
+              setSelectedCourseKey(key);
+              posthog.capture("requisite_course_opened", {
+                course_code: code,
+              });
+            }
+          }}
+          graph={graph}
         />
 
         <MobileNav />
@@ -1163,13 +1215,11 @@ function CourseResultRow({
             <span className="truncate text-sm text-muted-foreground">{course.department.code}</span>
           </div>
           <p className="truncate text-sm font-medium">{course.name}</p>
-          <div className="flex items-center gap-1.5 overflow-hidden">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Badge variant="outline">{course.maxCredit.toFixed(1)} credit</Badge>
             {breadths.slice(0, 3).map((breadth) => (
-              // min-w-0 + shrink lets long breadth names truncate instead of
-              // wrapping past the fixed-height virtualized row.
-              <Badge key={breadth} variant="secondary" className="min-w-0 shrink">
-                <span className="truncate">{formatBreadth(breadth)}</span>
+              <Badge key={breadth} variant="secondary">
+                {formatBreadth(breadth)}
               </Badge>
             ))}
             {full && <Badge variant="destructive">Full</Badge>}
@@ -1517,414 +1567,6 @@ function SectionCombobox({
   );
 }
 
-function CourseDetailSheet({
-  course,
-  activePlan,
-  planSelectedSections,
-  refreshError,
-  refreshing,
-  pinned,
-  onChoose,
-  onClearChoice,
-  onOpenChange,
-  onPin,
-  onUnpin,
-  onRefresh,
-}: {
-  course: Course | null;
-  activePlan: Plan;
-  planSelectedSections: readonly PlanSelectedSection[];
-  refreshError: string | null;
-  refreshing: boolean;
-  pinned: boolean;
-  onChoose: (
-    courseCode: string,
-    sectionCode: SectionCode,
-    teachMethod: TeachMethod,
-    sectionName: string,
-  ) => void;
-  onClearChoice: (
-    courseCode: string,
-    sectionCode: SectionCode,
-    teachMethod: TeachMethod,
-  ) => void;
-  onOpenChange: (open: boolean) => void;
-  onPin: (course: Course) => void;
-  onUnpin: (course: Course) => void;
-  onRefresh: (course: Course) => void;
-}) {
-  const chosenForCourse = course
-    ? activePlan.pinned.find(
-        (entry) =>
-          entry.courseCode === course.code &&
-          entry.sectionCode === course.sectionCode,
-      )?.chosen ?? {}
-    : {};
-  return (
-    <Sheet open={course !== null} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-hidden p-0 sm:max-w-3xl">
-        {course && (
-          <>
-            <SheetHeader className="border-b p-5 pr-14">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                <div className="min-w-0 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <SheetTitle className="text-xl">{course.code}</SheetTitle>
-                    <SectionBadge sectionCode={course.sectionCode} />
-                    <Badge variant="outline">{course.maxCredit.toFixed(1)} credit</Badge>
-                  </div>
-                  <SheetDescription className="text-base text-foreground">
-                    {course.name}
-                  </SheetDescription>
-                  <p className="text-sm text-muted-foreground">
-                    {course.department.name}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 sm:flex-none"
-                    onClick={() => onRefresh(course)}
-                    disabled={refreshing}
-                  >
-                    <RefreshCw className={cn(refreshing && "animate-spin")} />
-                    Refresh seats
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={pinned ? "secondary" : "default"}
-                    size="sm"
-                    className="flex-1 sm:flex-none"
-                    onClick={() => (pinned ? onUnpin(course) : onPin(course))}
-                  >
-                    {pinned ? <PinOff /> : <Pin />}
-                    {pinned ? "Pinned" : "Pin"}
-                  </Button>
-                </div>
-              </div>
-              {refreshError && <p className="text-sm text-destructive">{refreshError}</p>}
-            </SheetHeader>
-
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              <CourseDetailBody
-                course={course}
-                chosen={chosenForCourse}
-                planSelectedSections={planSelectedSections}
-                onChoose={onChoose}
-                onClearChoice={onClearChoice}
-              />
-            </div>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function CourseDetailBody({
-  course,
-  chosen,
-  planSelectedSections,
-  onChoose,
-  onClearChoice,
-}: {
-  course: Course;
-  chosen: Record<TeachMethod, string | null>;
-  planSelectedSections: readonly PlanSelectedSection[];
-  onChoose: (
-    courseCode: string,
-    sectionCode: SectionCode,
-    teachMethod: TeachMethod,
-    sectionName: string,
-  ) => void;
-  onClearChoice: (
-    courseCode: string,
-    sectionCode: SectionCode,
-    teachMethod: TeachMethod,
-  ) => void;
-}) {
-  const info = course.cmCourseInfo;
-  const breadths = getCourseBreadthCodes(course);
-  const groupedSections = groupSectionsByTeachMethod(course.sections);
-  const courseKeyValue = courseKey(course);
-
-  return (
-    <div className="space-y-6">
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Description</h3>
-        <div
-          className="prose prose-sm max-w-none text-sm leading-6 text-muted-foreground [&_a]:text-primary [&_li]:ml-4 [&_ul]:list-disc"
-          dangerouslySetInnerHTML={{
-            __html:
-              sanitizeHtml(info?.description ?? null) ||
-              "<p>No course description is available.</p>",
-          }}
-        />
-      </section>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        <RequirementBlock title="Prerequisites" html={info?.prerequisitesText ?? null} />
-        <RequirementBlock title="Corequisites" html={info?.corequisitesText ?? null} />
-        <RequirementBlock title="Exclusions" html={info?.exclusionsText ?? null} />
-        <RequirementBlock
-          title="Recommended preparation"
-          html={info?.recommendedPreparation ?? null}
-        />
-      </div>
-
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Breadth</h3>
-        <div className="flex flex-wrap gap-1.5">
-          {breadths.length > 0 ? (
-            breadths.map((breadth) => (
-              <Badge key={breadth} variant="secondary">
-                {formatBreadth(breadth)}
-              </Badge>
-            ))
-          ) : (
-            <span className="text-sm text-muted-foreground">No breadth listed</span>
-          )}
-        </div>
-      </section>
-
-      {course.notes.length > 0 && (
-        <section className="space-y-2">
-          <h3 className="text-sm font-semibold">Notes</h3>
-          <div className="space-y-2">
-            {course.notes.map((note, index) => (
-              <div
-                key={`${note.name}-${index}`}
-                className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground"
-                dangerouslySetInnerHTML={{ __html: sanitizeHtml(note.content) }}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold">Sections</h3>
-        {groupedSections.map(([teachMethod, sections]) => (
-          <div key={teachMethod} className="overflow-hidden rounded-md border">
-            <div className="border-b bg-muted/50 px-3 py-2 text-sm font-medium">
-              {teachMethod}
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-sm">
-                <thead className="bg-muted/30 text-xs text-muted-foreground">
-                  <tr>
-                    <th className="w-10 px-3 py-2 text-left font-medium">Pin</th>
-                    <th className="px-3 py-2 text-left font-medium">Section</th>
-                    <th className="px-3 py-2 text-left font-medium">Meetings</th>
-                    <th className="px-3 py-2 text-left font-medium">Instructor</th>
-                    <th className="px-3 py-2 text-left font-medium">Seats</th>
-                    <th className="px-3 py-2 text-left font-medium">Delivery</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sections.map((section) => {
-                    const isChosen = (chosen[teachMethod] ?? null) === section.name;
-                    const conflict = sectionConflictsWithPlan(
-                      section,
-                      course.sectionCode,
-                      courseKeyValue,
-                      planSelectedSections,
-                    );
-
-                    return (
-                      <SectionRow
-                        key={section.name}
-                        section={section}
-                        chosen={isChosen}
-                        conflict={conflict}
-                        onToggle={() => {
-                          if (isChosen) {
-                            onClearChoice(
-                              course.code,
-                              course.sectionCode,
-                              teachMethod,
-                            );
-                          } else {
-                            onChoose(
-                              course.code,
-                              course.sectionCode,
-                              teachMethod,
-                              section.name,
-                            );
-                          }
-                        }}
-                      />
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))}
-      </section>
-    </div>
-  );
-}
-
-function RequirementBlock({
-  title,
-  html,
-}: {
-  title: string;
-  html: string | null;
-}) {
-  const sanitized = sanitizeHtml(html);
-
-  return (
-    <section className="rounded-md border p-3">
-      <h3 className="mb-2 text-sm font-semibold">{title}</h3>
-      {sanitized ? (
-        <div
-          className="text-sm leading-6 text-muted-foreground [&_a]:text-primary"
-          dangerouslySetInnerHTML={{ __html: sanitized }}
-        />
-      ) : (
-        <p className="text-sm text-muted-foreground">None listed</p>
-      )}
-    </section>
-  );
-}
-
-function SectionRow({
-  section,
-  chosen,
-  conflict,
-  onToggle,
-}: {
-  section: Section;
-  chosen: boolean;
-  conflict: PlanSelectedSection | null;
-  onToggle: () => void;
-}) {
-  const cancelled = section.cancelInd === "Y";
-
-  return (
-    <tr
-      className={cn(
-        "border-t",
-        cancelled && "text-muted-foreground line-through",
-        chosen && "bg-primary/5",
-        conflict && !chosen && "bg-destructive/5",
-      )}
-    >
-      <td className="px-3 py-3 align-top">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant={chosen ? "secondary" : "ghost"}
-              size="icon-xs"
-              disabled={cancelled}
-              onClick={onToggle}
-            >
-              {chosen ? <PinOff /> : <Pin />}
-              <span className="sr-only">
-                {chosen ? "Clear choice (back to Auto)" : "Pin this section"}
-              </span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {chosen ? "Clear choice — back to Auto" : "Pin course and choose this section"}
-          </TooltipContent>
-        </Tooltip>
-      </td>
-      <td className="px-3 py-3 align-top font-medium">
-        <div className="space-y-1">
-          <span>{section.name}</span>
-          {conflict && (
-            <div className="text-xs font-normal text-destructive no-underline">
-              Conflicts with {conflict.courseCode} {conflict.section.name}
-            </div>
-          )}
-        </div>
-      </td>
-      <td className="max-w-[280px] px-3 py-3 align-top">
-        {section.meetingTimes.length > 0 ? (
-          <div className="space-y-1">
-            {section.meetingTimes.map((meeting, index) => (
-              <div key={`${section.name}-${index}`}>
-                <span>{formatMeetingTime(meeting)}</span>
-                <span className="mx-1 text-muted-foreground">·</span>
-                <BuildingLocation meeting={meeting} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <span className="text-muted-foreground">TBA</span>
-        )}
-      </td>
-      <td className="px-3 py-3 align-top">
-        <SectionInstructors section={section} />
-      </td>
-      <td className="px-3 py-3 align-top">
-        <div className="space-y-1">
-          <span>
-            {section.currentEnrolment}/{section.maxEnrolment}
-          </span>
-          {section.currentWaitlist > 0 && (
-            <div className="text-xs text-muted-foreground">
-              {section.currentWaitlist} waitlisted
-            </div>
-          )}
-        </div>
-      </td>
-      <td className="px-3 py-3 align-top">
-        <div className="flex flex-wrap gap-1">
-          {getSectionDeliveryModes(section).map((mode) => (
-            <Badge key={mode} variant="outline">
-              {DELIVERY_MODE_LABELS[mode]}
-            </Badge>
-          ))}
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-function BuildingLocation({ meeting }: { meeting: MeetingTime }) {
-  const buildingCode = meeting.building.buildingCode;
-  const room = formatRoom(meeting);
-  const building = buildingByCode.get(buildingCode);
-  const label = buildingCode ? `${buildingCode}${room}` : "TBA";
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="underline decoration-dotted underline-offset-2">{label}</span>
-      </TooltipTrigger>
-      <TooltipContent>
-        {building?.name ?? meeting.building.buildingName ?? buildingCode}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function SectionBadge({ sectionCode }: { sectionCode: SectionCode }) {
-  return (
-    <Badge
-      variant="outline"
-      className={cn(
-        "border-transparent",
-        sectionCode === "F" &&
-          "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300",
-        sectionCode === "S" &&
-          "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300",
-        sectionCode === "Y" &&
-          "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-300",
-      )}
-    >
-      {sectionCode}
-    </Badge>
-  );
-}
-
 function CatalogEmptyState() {
   return (
     <div className="flex flex-1 items-center justify-center border-t p-8">
@@ -2021,6 +1663,34 @@ function isCoursePinned(
 
 function courseKey(course: Course): string {
   return `${course.code}:${course.sectionCode}`;
+}
+
+const SECTION_PREFERENCE: SectionCode[] = ["F", "S", "Y"];
+
+/**
+ * Resolve a URL `course` param to a `coursesByKey` key.
+ * Accepts `"CSC108H1"` (bare code) or `"CSC108H1:F"` (code + section).
+ * For a bare code, pick the preferred offering (F > S > Y) present in the map.
+ */
+function resolveKey(
+  value: string,
+  coursesByKey: Map<string, Course>,
+): string | null {
+  const [code, section] = value.split(":");
+
+  if (section) {
+    return coursesByKey.has(value) ? value : null;
+  }
+
+  for (const preference of SECTION_PREFERENCE) {
+    const candidate = `${code}:${preference}`;
+
+    if (coursesByKey.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function pinnedKey(pinned: PinnedCourse): string {
@@ -2128,21 +1798,6 @@ function sectionCodeLabel(sectionCode: SectionCode): string {
   return "Year";
 }
 
-const BREADTH_NAMES: Record<string, string> = {
-  "1": "Creative and Cultural Representations",
-  "2": "Thought, Belief, and Behaviour",
-  "3": "Society and Its Institutions",
-  "4": "Living Things and Their Environment",
-  "5": "The Physical and Mathematical Universes",
-};
-
-function formatBreadth(breadth: string): string {
-  const match = breadth.match(/([1-5])$/);
-  if (!match?.[1]) return breadth;
-  const name = BREADTH_NAMES[match[1]];
-  return name ? `BR ${match[1]}: ${name}` : `BR ${match[1]}`;
-}
-
 function compareBreadthCodes(left: string, right: string): number {
   return breadthRank(left) - breadthRank(right);
 }
@@ -2150,49 +1805,6 @@ function compareBreadthCodes(left: string, right: string): number {
 function breadthRank(value: string): number {
   const match = value.match(/([1-5])$/);
   return match?.[1] ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
-}
-
-function groupSectionsByTeachMethod(
-  sections: readonly Section[],
-): Array<[TeachMethod, Section[]]> {
-  const groups = new Map<TeachMethod, Section[]>();
-
-  sections.forEach((section) => {
-    groups.set(section.teachMethod, [
-      ...(groups.get(section.teachMethod) ?? []),
-      section,
-    ]);
-  });
-
-  return [...groups.entries()].sort(([left], [right]) =>
-    teachMethodRank(left) - teachMethodRank(right) || left.localeCompare(right),
-  );
-}
-
-function getTeachMethods(sections: readonly Section[]): TeachMethod[] {
-  return groupSectionsByTeachMethod(sections).map(([teachMethod]) => teachMethod);
-}
-
-function teachMethodRank(teachMethod: TeachMethod): number {
-  if (teachMethod === "LEC") {
-    return 0;
-  }
-
-  if (teachMethod === "TUT") {
-    return 1;
-  }
-
-  if (teachMethod === "PRA") {
-    return 2;
-  }
-
-  return 3;
-}
-
-function formatMeetingTime(meeting: MeetingTime): string {
-  return `${formatDay(meeting.start.day)} ${millisofdayToHHMM(
-    meeting.start.millisofday,
-  )}-${millisofdayToHHMM(meeting.end.millisofday)}`;
 }
 
 function formatSectionOption(section: Section): string {
@@ -2204,52 +1816,6 @@ function formatSectionOption(section: Section): string {
     : "TBA";
 
   return `${section.name} · ${meeting} · ${building} · ${section.currentEnrolment}/${section.maxEnrolment}`;
-}
-
-function formatRoom(meeting: MeetingTime): string {
-  const number = meeting.building.buildingRoomNumber;
-  const suffix = meeting.building.buildingRoomSuffix;
-
-  return `${number}${suffix}`.trim();
-}
-
-function SectionInstructors({ section }: { section: Section }) {
-  const instructors = section.instructors.filter(
-    (instructor) => instructor.firstName || instructor.lastName,
-  );
-
-  if (instructors.length === 0) {
-    return <span className="text-muted-foreground">TBA</span>;
-  }
-
-  return (
-    <>
-      {instructors.map((instructor, index) => (
-        <React.Fragment key={`${instructor.firstName}-${instructor.lastName}-${index}`}>
-          {index > 0 && ", "}
-          <span className="whitespace-nowrap">
-            {`${instructor.firstName} ${instructor.lastName}`.trim()}
-            <ProfRating
-              firstName={instructor.firstName}
-              lastName={instructor.lastName}
-            />
-          </span>
-        </React.Fragment>
-      ))}
-    </>
-  );
-}
-
-function getSectionDeliveryModes(section: Section): DeliveryMode[] {
-  const modes = new Set<DeliveryMode>(
-    section.deliveryModes.map((deliveryMode) => deliveryMode.mode),
-  );
-
-  if (section.tbaInd === "Y" || section.meetingTimes.length === 0) {
-    modes.add("ASYNC");
-  }
-
-  return [...modes].sort();
 }
 
 function extractLiveCourse(
