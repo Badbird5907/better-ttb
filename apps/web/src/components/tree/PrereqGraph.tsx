@@ -131,14 +131,38 @@ function PrereqGraphInner({
     };
   }, [raw]);
 
-  // Re-fit whenever the focus (and therefore the whole subgraph) changes.
+  // Zoom in on the focused course (plus its immediate neighbours) whenever the
+  // focus — and therefore the whole subgraph — changes, rather than fitting the
+  // entire (potentially massive) tree.
   React.useEffect(() => {
     if (!layout) {
       return;
     }
 
+    const focusId = courseId(focusCode);
+    const neighbourhood = new Set<string>([focusId]);
+
+    for (const edge of layout.edges) {
+      if (edge.source === focusId) {
+        neighbourhood.add(edge.target);
+      } else if (edge.target === focusId) {
+        neighbourhood.add(edge.source);
+      }
+    }
+
+    const targetNodes = layout.nodes.filter((node) =>
+      neighbourhood.has(node.id),
+    );
+    const fitNodes =
+      targetNodes.length > 0 ? targetNodes : [{ id: focusId }];
+
     const handle = window.setTimeout(() => {
-      void fitView({ duration: 400, padding: 0.2 });
+      void fitView({
+        nodes: fitNodes,
+        duration: 400,
+        padding: 0.3,
+        maxZoom: 1,
+      });
     }, 0);
 
     return () => window.clearTimeout(handle);
@@ -182,8 +206,6 @@ function PrereqGraphInner({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodeClick={handleNodeClick}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
         minZoom={0.1}
         nodesDraggable={false}
         nodesConnectable={false}
@@ -640,7 +662,8 @@ function CourseFlowNode({ data }: NodeProps<FlowNode>) {
       style={{ width: COURSE_W, height: COURSE_H }}
       className={cn(
         "flex flex-col justify-center gap-0.5 rounded-md border bg-card px-3 py-2 text-card-foreground shadow-sm transition-colors",
-        data.isFocus && "ring-2 ring-ring ring-offset-1 ring-offset-background",
+        data.isFocus &&
+          "border-blue-500 bg-blue-50 ring-2 ring-blue-500 ring-offset-1 ring-offset-background dark:border-blue-400 dark:bg-blue-950/40 dark:ring-blue-400",
         dimmed
           ? "cursor-default border-dashed opacity-40"
           : "cursor-pointer hover:border-ring",
