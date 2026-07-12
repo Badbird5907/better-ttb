@@ -156,6 +156,73 @@ export const usePlanStore = create<PlanStore>()(
   ),
 );
 
+/**
+ * Applies a plan-store localStorage value written by another tab. Plan
+ * contents sync across tabs, but the active plan stays per-tab so users can
+ * compare plans side-by-side; the local selection is only replaced when its
+ * plan no longer exists in the incoming state.
+ */
+export function applyExternalPlanState(rawValue: string | null): void {
+  if (rawValue === null) {
+    return;
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(rawValue);
+  } catch {
+    return;
+  }
+
+  // Ignore values without a plausible persisted shape rather than letting the
+  // migrate fallback replace the user's plans with a fresh initial state.
+  if (
+    !isRecord(parsed) ||
+    !isRecord(parsed.state) ||
+    !Array.isArray(parsed.state.plans) ||
+    parsed.state.plans.length === 0
+  ) {
+    return;
+  }
+
+  const incoming = migratePlanStoreState(parsed.state, PLAN_STORAGE_VERSION);
+  const current = usePlanStore.getState();
+  const activePlanId = incoming.plans.some(
+    (plan) => plan.id === current.activePlanId,
+  )
+    ? current.activePlanId
+    : incoming.activePlanId;
+
+  // No-op guard: applying state re-persists it (with this tab's own
+  // activePlanId), which fires storage events in other tabs. Skipping
+  // identical updates breaks the resulting echo cycle.
+  if (
+    activePlanId === current.activePlanId &&
+    JSON.stringify(incoming.plans) === JSON.stringify(current.plans)
+  ) {
+    return;
+  }
+
+  usePlanStore.setState({ plans: incoming.plans, activePlanId });
+}
+
+/**
+ * Keeps the plan store in sync with writes from other tabs. The storage event
+ * only fires in tabs that did not perform the write. Returns an unsubscribe
+ * function.
+ */
+export function subscribeToPlanStorageSync(): () => void {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === PLAN_STORAGE_KEY) {
+      applyExternalPlanState(event.newValue);
+    }
+  };
+
+  window.addEventListener("storage", onStorage);
+  return () => window.removeEventListener("storage", onStorage);
+}
+
 export function createInitialPlanState(): PersistedPlanState {
   const plan = createPlan("Plan 1", DEFAULT_PLAN_SESSIONS);
 

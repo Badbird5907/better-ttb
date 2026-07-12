@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import {
   HeadContent,
   Outlet,
@@ -8,6 +8,7 @@ import {
 import { PostHogProvider } from "@posthog/react";
 
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import { subscribeToPlanStorageSync } from "@/stores/plan";
 import appCss from "../styles/app.css?url";
 
 export const Route = createRootRoute({
@@ -28,6 +29,9 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+  // Client-only: keep plan state in sync with edits made in other tabs.
+  useEffect(() => subscribeToPlanStorageSync(), []);
+
   return (
     <RootDocument>
       <Outlet />
