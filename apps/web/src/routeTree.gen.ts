@@ -16,6 +16,7 @@ import { Route as PIdRouteImport } from './routes/p.$id'
 import { Route as ApiWalkRouteRouteImport } from './routes/api/walk-route'
 import { Route as ApiShareRouteImport } from './routes/api/share'
 import { Route as ApiReferenceDataRouteImport } from './routes/api/reference-data'
+import { Route as ApiProfRatingRouteImport } from './routes/api/prof-rating'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiCatalogRouteImport } from './routes/api/catalog'
 import { Route as ApiShareIdRouteImport } from './routes/api/share.$id'
@@ -57,6 +58,11 @@ const ApiReferenceDataRoute = ApiReferenceDataRouteImport.update({
   path: '/api/reference-data',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProfRatingRoute = ApiProfRatingRouteImport.update({
+  id: '/api/prof-rating',
+  path: '/api/prof-rating',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/timetable': typeof TimetableRoute
   '/api/catalog': typeof ApiCatalogRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/prof-rating': typeof ApiProfRatingRoute
   '/api/reference-data': typeof ApiReferenceDataRoute
   '/api/share': typeof ApiShareRouteWithChildren
   '/api/walk-route': typeof ApiWalkRouteRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/timetable': typeof TimetableRoute
   '/api/catalog': typeof ApiCatalogRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/prof-rating': typeof ApiProfRatingRoute
   '/api/reference-data': typeof ApiReferenceDataRoute
   '/api/share': typeof ApiShareRouteWithChildren
   '/api/walk-route': typeof ApiWalkRouteRoute
@@ -118,6 +126,7 @@ export interface FileRoutesById {
   '/timetable': typeof TimetableRoute
   '/api/catalog': typeof ApiCatalogRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/prof-rating': typeof ApiProfRatingRoute
   '/api/reference-data': typeof ApiReferenceDataRoute
   '/api/share': typeof ApiShareRouteWithChildren
   '/api/walk-route': typeof ApiWalkRouteRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/timetable'
     | '/api/catalog'
     | '/api/health'
+    | '/api/prof-rating'
     | '/api/reference-data'
     | '/api/share'
     | '/api/walk-route'
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
     | '/timetable'
     | '/api/catalog'
     | '/api/health'
+    | '/api/prof-rating'
     | '/api/reference-data'
     | '/api/share'
     | '/api/walk-route'
@@ -162,6 +173,7 @@ export interface FileRouteTypes {
     | '/timetable'
     | '/api/catalog'
     | '/api/health'
+    | '/api/prof-rating'
     | '/api/reference-data'
     | '/api/share'
     | '/api/walk-route'
@@ -177,6 +189,7 @@ export interface RootRouteChildren {
   TimetableRoute: typeof TimetableRoute
   ApiCatalogRoute: typeof ApiCatalogRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiProfRatingRoute: typeof ApiProfRatingRoute
   ApiReferenceDataRoute: typeof ApiReferenceDataRoute
   ApiShareRoute: typeof ApiShareRouteWithChildren
   ApiWalkRouteRoute: typeof ApiWalkRouteRoute
@@ -236,6 +249,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiReferenceDataRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/prof-rating': {
+      id: '/api/prof-rating'
+      path: '/api/prof-rating'
+      fullPath: '/api/prof-rating'
+      preLoaderRoute: typeof ApiProfRatingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/health': {
       id: '/api/health'
       path: '/api/health'
@@ -292,6 +312,7 @@ const rootRouteChildren: RootRouteChildren = {
   TimetableRoute: TimetableRoute,
   ApiCatalogRoute: ApiCatalogRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiProfRatingRoute: ApiProfRatingRoute,
   ApiReferenceDataRoute: ApiReferenceDataRoute,
   ApiShareRoute: ApiShareRouteWithChildren,
   ApiWalkRouteRoute: ApiWalkRouteRoute,

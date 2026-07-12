@@ -36,6 +36,7 @@ import * as React from "react";
 
 import buildings from "@/data/buildings.json";
 import { AppNav, MobileNav } from "@/components/app-nav";
+import { ProfRating } from "@/components/prof-rating";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   DAY_FILTERS,
@@ -379,14 +380,6 @@ function Home() {
     });
   }
 
-  function togglePinCourse(course: Course) {
-    if (isCoursePinned(activePlan, course.code, course.sectionCode)) {
-      unpinCourse(course.code, course.sectionCode);
-    } else {
-      pinCourse(course.code, course.sectionCode);
-    }
-  }
-
   function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (results.length === 0) {
       return;
@@ -413,13 +406,6 @@ function Home() {
       event.preventDefault();
       event.stopPropagation();
       setSelectedCourseKey(courseKey(activeCourse));
-      return;
-    }
-
-    if ((event.key === "p" || event.key === "P") && activeCourse) {
-      event.preventDefault();
-      event.stopPropagation();
-      togglePinCourse(activeCourse);
     }
   }
 
@@ -1165,11 +1151,13 @@ function CourseResultRow({
             <span className="truncate text-sm text-muted-foreground">{course.department.code}</span>
           </div>
           <p className="truncate text-sm font-medium">{course.name}</p>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex items-center gap-1.5 overflow-hidden">
             <Badge variant="outline">{course.maxCredit.toFixed(1)} credit</Badge>
             {breadths.slice(0, 3).map((breadth) => (
-              <Badge key={breadth} variant="secondary">
-                {formatBreadth(breadth)}
+              // min-w-0 + shrink lets long breadth names truncate instead of
+              // wrapping past the fixed-height virtualized row.
+              <Badge key={breadth} variant="secondary" className="min-w-0 shrink">
+                <span className="truncate">{formatBreadth(breadth)}</span>
               </Badge>
             ))}
             {full && <Badge variant="destructive">Full</Badge>}
@@ -1860,7 +1848,9 @@ function SectionRow({
           <span className="text-muted-foreground">TBA</span>
         )}
       </td>
-      <td className="px-3 py-3 align-top">{formatInstructors(section)}</td>
+      <td className="px-3 py-3 align-top">
+        <SectionInstructors section={section} />
+      </td>
       <td className="px-3 py-3 align-top">
         <div className="space-y-1">
           <span>
@@ -2211,14 +2201,31 @@ function formatRoom(meeting: MeetingTime): string {
   return `${number}${suffix}`.trim();
 }
 
-function formatInstructors(section: Section): string {
-  if (section.instructors.length === 0) {
-    return "TBA";
+function SectionInstructors({ section }: { section: Section }) {
+  const instructors = section.instructors.filter(
+    (instructor) => instructor.firstName || instructor.lastName,
+  );
+
+  if (instructors.length === 0) {
+    return <span className="text-muted-foreground">TBA</span>;
   }
 
-  return section.instructors
-    .map((instructor) => `${instructor.firstName} ${instructor.lastName}`)
-    .join(", ");
+  return (
+    <>
+      {instructors.map((instructor, index) => (
+        <React.Fragment key={`${instructor.firstName}-${instructor.lastName}-${index}`}>
+          {index > 0 && ", "}
+          <span className="whitespace-nowrap">
+            {`${instructor.firstName} ${instructor.lastName}`.trim()}
+            <ProfRating
+              firstName={instructor.firstName}
+              lastName={instructor.lastName}
+            />
+          </span>
+        </React.Fragment>
+      ))}
+    </>
+  );
 }
 
 function getSectionDeliveryModes(section: Section): DeliveryMode[] {

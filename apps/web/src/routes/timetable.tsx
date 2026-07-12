@@ -87,6 +87,7 @@ import buildings from "@/data/buildings.json";
 import {
   DAY_OPTIONS,
   DELIVERY_MODE_OPTIONS,
+  RULE_DESCRIPTIONS,
   RULE_KIND_ORDER,
   RULE_LABELS,
   blockedWindowsFromRules,
@@ -941,7 +942,7 @@ function RuleEditor({
             <div className="flex items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-medium">{RULE_LABELS[rule.kind]}</p>
-                <p className="text-xs text-muted-foreground">{rule.kind}</p>
+                <p className="text-xs text-muted-foreground">{RULE_DESCRIPTIONS[rule.kind]}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">Soft</span>

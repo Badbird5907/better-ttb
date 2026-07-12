@@ -35,6 +35,21 @@ export const RULE_LABELS: Record<RuleKind, string> = {
   "prefer-instructor": "Prefer instructor",
 };
 
+export const RULE_DESCRIPTIONS: Record<RuleKind, string> = {
+  "max-gap": "Limits how long you wait between classes on the same day.",
+  "max-walk": "Limits walking time between back-to-back classes.",
+  "blocked-times": "Keeps classes out of times you've painted as unavailable.",
+  "earliest-start": "Avoids classes that start before your chosen time.",
+  "latest-end": "Avoids classes that run past your chosen time.",
+  "days-off": "Tries to keep whole days free of classes.",
+  compactness: "Prefers tightly packed days or spread-out days.",
+  "lunch-break": "Keeps a free block for lunch within your chosen window.",
+  "avoid-full-sections": "Steers away from sections with no seats left.",
+  "avoid-waitlist": "Steers away from sections where you'd be waitlisted.",
+  "prefer-delivery": "Favours sections taught in your preferred format.",
+  "prefer-instructor": "Favours sections taught by instructors you list.",
+};
+
 export const DELIVERY_MODE_OPTIONS: Array<{ value: DeliveryMode; label: string }> = [
   { value: "INPER", label: "In person" },
   { value: "SYNC", label: "Online sync" },
