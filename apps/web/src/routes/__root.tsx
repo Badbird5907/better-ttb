@@ -8,6 +8,7 @@ import {
 import { PostHogProvider } from "@posthog/react";
 
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import appCss from "../styles/app.css?url";
 
 export const Route = createRootRoute({
@@ -69,7 +70,7 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
             debug: import.meta.env.DEV,
           }}
         >
-          {children}
+          <TooltipProvider>{children}</TooltipProvider>
         </PostHogProvider>
         <Scripts />
       </body>
