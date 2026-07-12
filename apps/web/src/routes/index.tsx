@@ -658,9 +658,9 @@ function BuilderHeader({
             <Layers className="size-4" />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold">better-ttb</h1>
+            <h1 className="truncate text-base font-semibold">Better TTB</h1>
             <p className="hidden truncate text-xs text-muted-foreground sm:block">
-              UofT Arts & Science timetable builder
+              By Evan Yu
             </p>
           </div>
         </div>

@@ -330,8 +330,8 @@ function MapHeader() {
             <Layers className="size-4" />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold">better-ttb</h1>
-            <p className="hidden truncate text-xs text-muted-foreground sm:block">Map</p>
+            <h1 className="truncate text-base font-semibold">Better TTB</h1>
+            <p className="hidden truncate text-xs text-muted-foreground sm:block">By Evan Yu</p>
           </div>
         </div>
 
