@@ -21,6 +21,7 @@ const block: TimetableBlock = {
   conflict: false,
   disallowed: false,
   preview: false,
+  waitlisted: false,
 };
 
 describe("WeekGrid", () => {

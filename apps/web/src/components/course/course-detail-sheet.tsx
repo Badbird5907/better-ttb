@@ -609,6 +609,11 @@ function SectionRow({
                 {section.enrolmentInd}
               </Badge>
             )}
+            {section.waitlistInd === "Y" && (
+              <Badge variant="outline" className="text-[10px] px-1 py-0 font-normal text-amber-700 dark:text-amber-400">
+                WL
+              </Badge>
+            )}
           </span>
           {conflict && (
             <div className="text-xs font-normal text-destructive no-underline">

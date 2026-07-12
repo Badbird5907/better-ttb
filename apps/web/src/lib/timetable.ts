@@ -38,6 +38,7 @@ export interface TimetableBlock {
   conflict: boolean;
   disallowed: boolean;
   preview: boolean;
+  waitlisted: boolean;
 }
 
 export interface UnscheduledSection {
@@ -220,6 +221,7 @@ export function buildTermBlocks(
         conflict: conflictSectionKeys.has(selectedSection.key),
         disallowed: disallowedSectionKeys.has(selectedSection.key),
         preview: options.preview ?? false,
+        waitlisted: selectedSection.section.waitlistInd === "Y",
       });
     });
   });

@@ -256,6 +256,14 @@ export function WeekGrid({
                         </span>
                       </span>
                     )}
+                    {!compact && block.waitlisted && (
+                      <span
+                        className="absolute bottom-1 right-1 rounded-sm bg-white/25 px-1 text-[9px] font-semibold leading-tight tracking-wide"
+                        title="Waitlist"
+                      >
+                        WL
+                      </span>
+                    )}
                   </button>
                 );
               })}

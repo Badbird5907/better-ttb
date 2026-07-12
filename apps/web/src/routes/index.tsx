@@ -1592,6 +1592,11 @@ function SectionCombobox({
                     · {selectedSection.enrolmentInd}
                   </span>
                 )}
+                {selectedSection.waitlistInd === "Y" && (
+                  <span className="ml-1.5 font-medium text-amber-700 dark:text-amber-400">
+                    · WL
+                  </span>
+                )}
               </>
             ) : (
               "Auto — let generator choose"
@@ -1663,6 +1668,11 @@ function SectionCombobox({
                         {section.enrolmentInd && (
                           <span className="ml-1.5 text-muted-foreground">
                             · {section.enrolmentInd}
+                          </span>
+                        )}
+                        {section.waitlistInd === "Y" && (
+                          <span className="ml-1.5 font-medium text-amber-700 dark:text-amber-400">
+                            · WL
                           </span>
                         )}
                         {conflict && (
