@@ -1,6 +1,11 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { usePostHog } from "@posthog/react";
-import type { Course } from "@better-ttb/shared";
+import type {
+  Course,
+  SectionCode,
+  TeachMethod,
+  TtbCourseLookupResponse,
+} from "@better-ttb/shared";
 import {
   Check,
   ChevronsUpDown,
@@ -11,6 +16,11 @@ import {
 import * as React from "react";
 
 import { AppNav, MobileNav } from "@/components/app-nav";
+import { CourseDetailSheet } from "@/components/course/course-detail-sheet";
+import {
+  extractLiveCourse,
+  mergeLiveEnrolment,
+} from "@/lib/live-course";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,9 +51,18 @@ import { Switch } from "@/components/ui/switch";
 import type { EdgeKind, GraphNode, RequisiteGraph } from "@/lib/requisites/graph";
 import { useRequisiteGraph, preferredOffering } from "@/lib/requisites/use-graph";
 import { sanitizeHtml, stripHtml } from "@/lib/sanitize";
+import {
+  courseKey,
+  type PlanSelectedSection,
+} from "@/lib/timetable";
 import { cn } from "@/lib/utils";
 import { useCatalogStore } from "@/stores/catalog";
-import { activePlanFromState, usePlanStore } from "@/stores/plan";
+import {
+  activePlanFromState,
+  usePlanStore,
+  type Plan,
+  type PinnedCourse,
+} from "@/stores/plan";
 
 // @xyflow/react + elkjs are heavy and browser-only; keep them in the /tree chunk
 // and off the SSR path (mirrors the CampusMap lazy import in map.tsx).
@@ -55,6 +74,10 @@ const PrereqGraph = React.lazy(() =>
 
 const DEPTH_OPTIONS = ["1", "2", "3", "All"] as const;
 type DepthOption = (typeof DEPTH_OPTIONS)[number];
+
+// The catalog has thousands of entries; only ever render a small slice into the
+// cmdk list to keep the picker responsive.
+const PICKER_RESULT_LIMIT = 50;
 
 export interface TreeSearch {
   course?: string;
@@ -79,6 +102,10 @@ function TreeRoute() {
   const loadCatalog = useCatalogStore((state) => state.loadCatalog);
   const plans = usePlanStore((state) => state.plans);
   const activePlanId = usePlanStore((state) => state.activePlanId);
+  const pinCourse = usePlanStore((state) => state.pin);
+  const unpinCourse = usePlanStore((state) => state.unpin);
+  const choose = usePlanStore((state) => state.choose);
+  const clearChoice = usePlanStore((state) => state.clearChoice);
   const activePlan = React.useMemo(
     () => activePlanFromState({ plans, activePlanId }),
     [activePlanId, plans],
@@ -90,6 +117,96 @@ function TreeRoute() {
   }, [activePlan.sessions, activeSessionsKey, loadCatalog]);
 
   const graph = useRequisiteGraph(catalog?.courses);
+
+  // Live seat overrides + the in-page course sheet state. Deliberately NOT tied
+  // to the `?course=` URL param (which drives tree focus, not the sheet) — the
+  // build page has a reopen bug from coupling sheet state to the URL.
+  const [liveCourses, setLiveCourses] = React.useState<Map<string, Course>>(
+    () => new Map(),
+  );
+  const [refreshingCourseKey, setRefreshingCourseKey] = React.useState<
+    string | null
+  >(null);
+  const [refreshError, setRefreshError] = React.useState<string | null>(null);
+  const [sheetCourseKey, setSheetCourseKey] = React.useState<string | null>(
+    null,
+  );
+
+  const coursesByKey = React.useMemo(() => {
+    const map = new Map<string, Course>();
+
+    catalog?.courses.forEach((course) => map.set(courseKey(course), course));
+    liveCourses.forEach((course, key) => map.set(key, course));
+
+    return map;
+  }, [catalog, liveCourses]);
+  const resolveCourseKey = React.useCallback(
+    (value: string): string | null => resolveKey(value, coursesByKey),
+    [coursesByKey],
+  );
+  const sheetCourse = sheetCourseKey
+    ? coursesByKey.get(sheetCourseKey) ?? null
+    : null;
+  const planSelectedSections = React.useMemo(
+    () => collectPlanSelectedSections(activePlan, coursesByKey),
+    [activePlan, coursesByKey],
+  );
+
+  const refreshSeats = React.useCallback(
+    async (course: Course) => {
+      const key = courseKey(course);
+
+      setRefreshingCourseKey(key);
+      setRefreshError(null);
+
+      try {
+        const params = new URLSearchParams({ sectionCode: course.sectionCode });
+        const response = await fetch(
+          `/api/course/${course.code}?${params.toString()}`,
+        );
+
+        if (!response.ok) {
+          throw new Error(`Refresh failed with HTTP ${response.status}`);
+        }
+
+        const liveCourse = extractLiveCourse(
+          (await response.json()) as TtbCourseLookupResponse,
+          course.sectionCode,
+        );
+
+        if (!liveCourse) {
+          throw new Error("Live course response did not include this offering");
+        }
+
+        setLiveCourses((current) => {
+          const next = new Map(current);
+          next.set(key, mergeLiveEnrolment(course, liveCourse));
+          return next;
+        });
+      } catch (refreshErrorValue) {
+        setRefreshError(
+          refreshErrorValue instanceof Error
+            ? refreshErrorValue.message
+            : String(refreshErrorValue),
+        );
+      } finally {
+        setRefreshingCourseKey(null);
+      }
+    },
+    [],
+  );
+
+  const openSheetForCode = React.useCallback(
+    (code: string) => {
+      const key = resolveCourseKey(code);
+
+      if (key) {
+        setSheetCourseKey(key);
+        posthog.capture("tree_course_sheet_opened", { course_code: code });
+      }
+    },
+    [posthog, resolveCourseKey],
+  );
 
   const [depth, setDepth] = React.useState<DepthOption>("1");
   const [showCoreq, setShowCoreq] = React.useState(false);
@@ -185,8 +302,50 @@ function TreeRoute() {
           focusCode={focusCode}
           focusFound={focusFound}
           onFocusCourse={setFocus}
+          onOpenSheet={
+            focusCode && focusFound ? () => openSheetForCode(focusCode) : null
+          }
         />
       </div>
+
+      <CourseDetailSheet
+        course={sheetCourse}
+        activePlan={activePlan}
+        planSelectedSections={planSelectedSections}
+        refreshError={refreshError}
+        refreshing={sheetCourseKey === refreshingCourseKey}
+        pinned={
+          sheetCourse
+            ? isCoursePinned(activePlan, sheetCourse.code, sheetCourse.sectionCode)
+            : false
+        }
+        onChoose={choose}
+        onClearChoice={clearChoice}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSheetCourseKey(null);
+            setRefreshError(null);
+          }
+        }}
+        onPin={(course) => pinCourse(course.code, course.sectionCode)}
+        onUnpin={(course) => unpinCourse(course.code, course.sectionCode)}
+        onRefresh={refreshSeats}
+        onOpenCourse={(code) => {
+          // Re-focus the tree on the clicked requisite, and keep the sheet open
+          // on that course when we can resolve it; otherwise just move focus and
+          // close the sheet.
+          setFocus(code);
+
+          const key = resolveCourseKey(code);
+
+          if (key) {
+            setSheetCourseKey(key);
+          } else {
+            setSheetCourseKey(null);
+          }
+        }}
+        graph={graph}
+      />
 
       <MobileNav />
     </main>
@@ -327,6 +486,7 @@ function CoursePicker({
   onSelect: (code: string) => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
 
   const entries = React.useMemo<PickerEntry[]>(() => {
     if (!graph) {
@@ -348,6 +508,24 @@ function CoursePicker({
     return list.sort((left, right) => left.code.localeCompare(right.code));
   }, [graph]);
 
+  // cmdk chokes on rendering thousands of CommandItems, so we filter ourselves
+  // (shouldFilter={false}) and only render a small slice of the matches.
+  const { matches, total } = React.useMemo(() => {
+    const trimmed = query.trim().toLowerCase();
+    const filtered = trimmed
+      ? entries.filter(
+          (entry) =>
+            entry.code.toLowerCase().includes(trimmed) ||
+            entry.name.toLowerCase().includes(trimmed),
+        )
+      : entries;
+
+    return {
+      matches: filtered.slice(0, PICKER_RESULT_LIMIT),
+      total: filtered.length,
+    };
+  }, [entries, query]);
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -367,19 +545,19 @@ function CoursePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[320px] p-0">
-        <Command
-          filter={(itemValue, searchTerm) =>
-            itemValue.toLowerCase().includes(searchTerm.toLowerCase()) ? 1 : 0
-          }
-        >
-          <CommandInput placeholder="Search by code or name…" />
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Search by code or name…"
+            value={query}
+            onValueChange={setQuery}
+          />
           <CommandList>
             <CommandEmpty>No courses match.</CommandEmpty>
             <CommandGroup>
-              {entries.map((entry) => (
+              {matches.map((entry) => (
                 <CommandItem
                   key={entry.code}
-                  value={`${entry.code} ${entry.name}`}
+                  value={entry.code}
                   onSelect={() => {
                     onSelect(entry.code);
                     setOpen(false);
@@ -398,6 +576,11 @@ function CoursePicker({
                 </CommandItem>
               ))}
             </CommandGroup>
+            {total > matches.length && (
+              <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                Showing {matches.length} of {total} — keep typing to narrow.
+              </div>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>
@@ -486,11 +669,13 @@ function FocusPanel({
   focusCode,
   focusFound,
   onFocusCourse,
+  onOpenSheet,
 }: {
   graph: RequisiteGraph | null;
   focusCode: string | null;
   focusFound: boolean;
   onFocusCourse: (code: string) => void;
+  onOpenSheet: (() => void) | null;
 }) {
   const node = focusCode ? graph?.nodes.get(focusCode) ?? null : null;
 
@@ -597,10 +782,15 @@ function FocusPanel({
             </div>
           )}
 
-          <Button asChild variant="outline" size="sm" className="w-full">
-            <Link to="/" search={{ course: focusCode }}>
-              Open course sheet
-            </Link>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={!onOpenSheet}
+            onClick={() => onOpenSheet?.()}
+          >
+            Open course sheet
           </Button>
         </div>
       </ScrollArea>
@@ -655,6 +845,94 @@ function firstSentences(text: string, count: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Course sheet helpers
+//
+// These mirror the local helpers in routes/index.tsx (which are not exported).
+// They are all pure module-scope functions — safe on the SSR path — so the
+// heavy graph chunk stays lazy-loaded.
+// ---------------------------------------------------------------------------
+
+const SECTION_PREFERENCE: SectionCode[] = ["F", "S", "Y"];
+
+function pinnedKey(pinned: PinnedCourse): string {
+  return `${pinned.courseCode}:${pinned.sectionCode}`;
+}
+
+function isCoursePinned(
+  plan: Plan,
+  code: string,
+  sectionCode: SectionCode,
+): boolean {
+  return plan.pinned.some(
+    (pinned) =>
+      pinned.courseCode === code && pinned.sectionCode === sectionCode,
+  );
+}
+
+/**
+ * Resolve a course CODE (or `code:section` key) to a `coursesByKey` key.
+ * For a bare code, prefer the F > S > Y offering present in the map.
+ */
+function resolveKey(
+  value: string,
+  coursesByKey: Map<string, Course>,
+): string | null {
+  const [code, section] = value.split(":");
+
+  if (section) {
+    return coursesByKey.has(value) ? value : null;
+  }
+
+  for (const preference of SECTION_PREFERENCE) {
+    const candidate = `${code}:${preference}`;
+
+    if (coursesByKey.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function collectPlanSelectedSections(
+  plan: Plan,
+  coursesByKey: Map<string, Course>,
+): PlanSelectedSection[] {
+  return plan.pinned.flatMap((pinned) => {
+    const course = coursesByKey.get(pinnedKey(pinned));
+
+    if (!course) {
+      return [];
+    }
+
+    return Object.entries(pinned.chosen).flatMap(([teachMethod, sectionName]) => {
+      if (!sectionName) {
+        return [];
+      }
+
+      const section = course.sections.find(
+        (candidate) =>
+          candidate.teachMethod === teachMethod && candidate.name === sectionName,
+      );
+
+      if (!section) {
+        return [];
+      }
+
+      return [
+        {
+          courseKey: pinnedKey(pinned),
+          courseCode: pinned.courseCode,
+          sectionCode: pinned.sectionCode,
+          teachMethod: teachMethod as TeachMethod,
+          section,
+        },
+      ];
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Header
 // ---------------------------------------------------------------------------
 
@@ -667,8 +945,8 @@ function TreeHeader() {
             <Network className="size-4" />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold">better-ttb</h1>
-            <p className="hidden truncate text-xs text-muted-foreground sm:block">Prereqs</p>
+            <h1 className="truncate text-base font-semibold">Better TTB</h1>
+            <p className="hidden truncate text-xs text-muted-foreground sm:block">By Evan Yu</p>
           </div>
         </div>
 

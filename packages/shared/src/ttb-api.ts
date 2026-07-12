@@ -188,6 +188,7 @@ export type TtbPageableCoursesResponse = TtbResponse<TtbPageableCoursesPayload>;
 export type TtbCourseLookupPayload =
   | Course
   | Course[]
+  | TtbPageableCoursesPayload
   | {
       course?: Course;
       courses?: Course[];

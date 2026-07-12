@@ -31,6 +31,10 @@ import {
 import * as React from "react";
 
 import { AppNav, MobileNav } from "@/components/app-nav";
+import {
+  extractLiveCourse,
+  mergeLiveEnrolment,
+} from "@/lib/live-course";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   DAY_FILTERS,
@@ -289,17 +293,29 @@ function Home() {
   );
 
   // URL -> selection: resolve the `course` param once the catalog is ready.
+  // We track the last param value we acted on so this effect does NOT re-run
+  // when `selectedCourseKey` changes (e.g. on close), which would reopen the
+  // sheet before the selection→URL effect below can clear the param.
+  const lastAppliedParamRef = React.useRef<string | undefined>(undefined);
   React.useEffect(() => {
     if (searchCourseParam === undefined || coursesByKey.size === 0) {
+      // If the param was cleared externally, reset so a future re-add works.
+      lastAppliedParamRef.current = undefined;
+      return;
+    }
+
+    // Skip if we already processed this exact param value.
+    if (searchCourseParam === lastAppliedParamRef.current) {
       return;
     }
 
     const resolved = resolveCourseKey(searchCourseParam);
 
-    if (resolved && resolved !== selectedCourseKey) {
+    if (resolved) {
+      lastAppliedParamRef.current = searchCourseParam;
       setSelectedCourseKey(resolved);
     }
-  }, [searchCourseParam, coursesByKey, resolveCourseKey, selectedCourseKey]);
+  }, [searchCourseParam, coursesByKey, resolveCourseKey]);
 
   // Selection -> URL: mirror the open course (full key) into `?course=`, and
   // drop the param on close. Only navigate when the param actually differs, so
@@ -1924,81 +1940,6 @@ function formatSectionOption(section: Section): string {
     : "TBA";
 
   return `${section.name} · ${meeting} · ${building} · ${section.currentEnrolment}/${section.maxEnrolment}`;
-}
-
-function extractLiveCourse(
-  response: TtbCourseLookupResponse,
-  sectionCode: SectionCode,
-): Course | null {
-  const payload = response.payload;
-
-  if (!payload) {
-    return null;
-  }
-
-  const candidates = Array.isArray(payload)
-    ? payload
-    : isCourse(payload)
-      ? [payload]
-      : extractCoursesFromRecord(payload);
-
-  return (
-    candidates.find((course) => course.sectionCode === sectionCode) ??
-    candidates[0] ??
-    null
-  );
-}
-
-function extractCoursesFromRecord(value: Record<string, unknown>): Course[] {
-  const course = value.course;
-  const courses = value.courses;
-
-  if (isCourse(course)) {
-    return [course];
-  }
-
-  if (Array.isArray(courses)) {
-    return courses.filter(isCourse);
-  }
-
-  return [];
-}
-
-function isCourse(value: unknown): value is Course {
-  return (
-    isRecord(value) &&
-    typeof value.code === "string" &&
-    typeof value.sectionCode === "string" &&
-    Array.isArray(value.sections)
-  );
-}
-
-function mergeLiveEnrolment(base: Course, live: Course): Course {
-  const liveSections = new Map(live.sections.map((section) => [section.name, section]));
-
-  return {
-    ...base,
-    primaryFull: live.primaryFull,
-    primaryWaitlistable: live.primaryWaitlistable,
-    sections: base.sections.map((section) => {
-      const liveSection = liveSections.get(section.name);
-
-      if (!liveSection) {
-        return section;
-      }
-
-      return {
-        ...section,
-        currentEnrolment: liveSection.currentEnrolment,
-        maxEnrolment: liveSection.maxEnrolment,
-        currentWaitlist: liveSection.currentWaitlist,
-        waitlistInd: liveSection.waitlistInd,
-        cancelInd: liveSection.cancelInd,
-        enrolmentInd: liveSection.enrolmentInd,
-        openLimitInd: liveSection.openLimitInd,
-      };
-    }),
-  };
 }
 
 function detectPlanConflictKeys(
