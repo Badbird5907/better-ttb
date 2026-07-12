@@ -111,10 +111,6 @@ export function isFullSection(section: Section): boolean {
   return section.currentEnrolment >= section.maxEnrolment;
 }
 
-export function isWaitlistableSection(section: Section): boolean {
-  return section.waitlistInd === "Y";
-}
-
 export function sectionDeliveryModes(section: Section): DeliveryMode[] {
   const modes = new Set(section.deliveryModes.map((deliveryMode) => deliveryMode.mode));
 

@@ -54,9 +54,9 @@ describe("worstGapMinutes", () => {
 });
 
 describe("waitlistedCount", () => {
-  it("parses the waitlistable section count", () => {
+  it("parses the waitlisted section count", () => {
     expect(
-      waitlistedCount(candidate({ metrics: [{ ruleId: "w", penalty: 0.5, detail: "3 waitlistable sections" }] })),
+      waitlistedCount(candidate({ metrics: [{ ruleId: "w", penalty: 0.5, detail: "3 waitlisted sections" }] })),
     ).toBe(3);
   });
 
@@ -72,7 +72,7 @@ describe("candidateChips", () => {
         score: 72,
         metrics: [
           { ruleId: "g", penalty: 0.1, detail: "1 gaps > 60min (worst 90min)" },
-          { ruleId: "w", penalty: 0.2, detail: "2 waitlistable sections" },
+          { ruleId: "w", penalty: 0.2, detail: "2 waitlisted sections" },
         ],
         extras: {
           totalWalkMinutesPerDay: { 1: 5.4, 2: 0, 3: 2.1, 4: 0, 5: 0, 6: 0, 7: 0 },

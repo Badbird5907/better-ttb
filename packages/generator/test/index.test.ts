@@ -547,3 +547,83 @@ describe("linked section enforcement", () => {
     expect(result.candidates).toHaveLength(4);
   });
 });
+
+describe("candidate dedupe", () => {
+  it("collapses tutorials with identical meetings/buildings into one candidate", () => {
+    const input = course("CSC148H1", "F", [
+      section("LEC0101", "LEC", [meeting(1, ms(9), ms(10))]),
+      section("TUT0101", "TUT", [meeting(2, ms(14), ms(15), { buildingCode: "BA" })]),
+      section("TUT0102", "TUT", [meeting(2, ms(14), ms(15), { buildingCode: "BA" })]),
+      section("TUT0103", "TUT", [meeting(2, ms(14), ms(15), { buildingCode: "BA" })]),
+    ]);
+
+    const result = generate([{ course: input }], { rules: noRules, maxResults: 10 });
+
+    // Three visually identical tutorials collapse to a single kept candidate.
+    expect(result.candidates).toHaveLength(1);
+    // Every feasible combination is still counted.
+    expect(result.stats.feasible).toBe(3);
+  });
+
+  it("keeps tutorials at different times as distinct candidates", () => {
+    const input = course("CSC148H1", "F", [
+      section("LEC0101", "LEC", [meeting(1, ms(9), ms(10))]),
+      section("TUT0101", "TUT", [meeting(2, ms(14), ms(15))]),
+      section("TUT0102", "TUT", [meeting(2, ms(16), ms(17))]),
+    ]);
+
+    const result = generate([{ course: input }], { rules: noRules, maxResults: 10 });
+
+    expect(result.candidates).toHaveLength(2);
+    expect(result.stats.feasible).toBe(2);
+  });
+
+  it("does not collapse same-time sections that differ in instructor", () => {
+    const input = course("CSC148H1", "F", [
+      section("LEC0101", "LEC", [meeting(1, ms(9), ms(10))]),
+      section("TUT0101", "TUT", [meeting(2, ms(14), ms(15))], {
+        instructors: [{ firstName: "Grace", lastName: "Hopper" }],
+      }),
+      section("TUT0102", "TUT", [meeting(2, ms(14), ms(15))], {
+        instructors: [{ firstName: "Ada", lastName: "Lovelace" }],
+      }),
+    ]);
+
+    const result = generate([{ course: input }], { rules: noRules, maxResults: 10 });
+
+    expect(result.candidates).toHaveLength(2);
+    expect(result.stats.feasible).toBe(2);
+  });
+
+  it("keeps the higher-scoring candidate when two share a fingerprint", () => {
+    // Two identical-time tutorials; one is full (and waitlisted) so an
+    // avoid-waitlist soft rule scores it lower. Dedupe must keep the open one.
+    const input = course("CSC148H1", "F", [
+      section("LEC0101", "LEC", [meeting(1, ms(9), ms(10))]),
+      section("TUT0101", "TUT", [meeting(2, ms(14), ms(15))], {
+        currentEnrolment: 100,
+        maxEnrolment: 100,
+        waitlistInd: "Y",
+      }),
+      section("TUT0102", "TUT", [meeting(2, ms(14), ms(15))], {
+        currentEnrolment: 0,
+        maxEnrolment: 100,
+      }),
+    ]);
+    const rules: RuleConfig[] = [
+      { id: "wait", kind: "avoid-waitlist", mode: "soft", weight: 1 },
+    ];
+
+    const result = generate([{ course: input }], { rules, maxResults: 10 });
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.stats.feasible).toBe(2);
+    // The kept candidate is the open (non-waitlisted) tutorial.
+    const tutSelection = result.candidates[0]?.selections.find(
+      (selection) => selection.teachMethod === "TUT",
+    );
+    expect(tutSelection?.sectionName).toBe("TUT0102");
+    // Perfect score: no waitlisted sections in the kept candidate.
+    expect(result.candidates[0]?.metrics[0]?.detail).toBe("0 waitlisted sections");
+  });
+});

@@ -1,5 +1,9 @@
 import type { DayNumber, MeetingTime } from "@better-ttb/shared";
-import { UOFT_TRANSFER_GRACE_MINUTES, walkSecondsFromMap } from "@better-ttb/shared";
+import {
+  isSectionWaitlisted,
+  UOFT_TRANSFER_GRACE_MINUTES,
+  walkSecondsFromMap,
+} from "@better-ttb/shared";
 
 import type {
   CandidateExtras,
@@ -16,7 +20,6 @@ import {
   formatClock,
   intervalsOverlap,
   isFullSection,
-  isWaitlistableSection,
   makeDayRecord,
   meetingEndMinutes,
   meetingStartMinutes,
@@ -536,13 +539,13 @@ function evaluateAvoidWaitlist(
   rule: Extract<RuleConfig, { kind: "avoid-waitlist" }>,
   context: EvaluationContext,
 ): RuleMetric {
-  const waitlistable = context.selectedSections.filter((selectedSection) =>
-    isWaitlistableSection(selectedSection.section),
+  const waitlisted = context.selectedSections.filter((selectedSection) =>
+    isSectionWaitlisted(selectedSection.section),
   );
   const penalty =
-    context.selectedSections.length === 0 ? 0 : waitlistable.length / context.selectedSections.length;
+    context.selectedSections.length === 0 ? 0 : waitlisted.length / context.selectedSections.length;
 
-  return metric(rule.id, penalty, `${waitlistable.length} waitlistable sections`);
+  return metric(rule.id, penalty, `${waitlisted.length} waitlisted sections`);
 }
 
 function evaluatePreferDelivery(

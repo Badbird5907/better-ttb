@@ -1,5 +1,7 @@
 import type { Course, Section } from "@better-ttb/shared";
-import { sectionAllowedByLinkage } from "@better-ttb/shared";
+import { isSectionWaitlisted, sectionAllowedByLinkage } from "@better-ttb/shared";
+
+export { isSectionWaitlisted };
 
 /**
  * Whether a section can be selected, and — when it cannot — a human-readable
@@ -33,22 +35,6 @@ const TBA_HINT = "This section doesn't have a day and time specified yet.";
  *   3. linkage violation      → must be taken together
  * A `tbaInd === "Y"` section is never disabled, but carries a TBA `hint`.
  */
-/**
- * Whether enrolling in `section` right now would place you on a waitlist.
- *
- * `waitlistInd === "Y"` only means the section *supports* a waitlist — many
- * sections with open seats carry it. A waitlist is actually active only once the
- * section is full, i.e. `currentEnrolment` (the number enrolled, not seats
- * remaining) has reached `maxEnrolment`.
- */
-export function isSectionWaitlisted(section: Section): boolean {
-  return (
-    section.waitlistInd === "Y" &&
-    section.maxEnrolment > 0 &&
-    section.currentEnrolment >= section.maxEnrolment
-  );
-}
-
 export function getSectionAvailability(
   section: Section,
   selectedOthers: Section[],

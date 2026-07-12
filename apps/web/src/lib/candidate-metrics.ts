@@ -40,13 +40,12 @@ export function worstGapMinutes(candidate: CandidateTimetable): number {
 }
 
 /**
- * Count of waitlistable/waitlisted sections reported by an avoid-waitlist
- * metric. Detail strings look like `3 waitlistable sections`. Returns 0 when the
- * rule is absent.
+ * Count of waitlisted sections reported by an avoid-waitlist metric. Detail
+ * strings look like `3 waitlisted sections`. Returns 0 when the rule is absent.
  */
 export function waitlistedCount(candidate: CandidateTimetable): number {
   for (const metric of candidate.metrics) {
-    const match = /^(\d+) waitlistable/.exec(metric.detail);
+    const match = /^(\d+) waitlisted/.exec(metric.detail);
 
     if (match) {
       return Number(match[1]);

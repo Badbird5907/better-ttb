@@ -20,6 +20,8 @@ import type {
 import {
   activeMeetings,
   isCancelled,
+  sectionDeliveryModes,
+  sectionInstructorText,
   termsForSectionCode,
 } from "./time";
 
@@ -76,16 +78,22 @@ export function generate(
     (first, second) =>
       first.choices.length - second.choices.length || first.inputIndex - second.inputIndex,
   );
-  const candidates: CandidateTimetable[] = [];
+  // Source of truth for kept candidates, keyed by schedule fingerprint so that
+  // sections differing only in name (e.g. TUT0101 vs TUT0102 with identical
+  // meetings) collapse into a single candidate. `stats.feasible` still counts
+  // every feasible combination — dedupe only affects the kept list.
+  const candidatesByFingerprint = new Map<string, CandidateTimetable>();
   let stoppedForBudget = false;
 
-  const pushCandidate = (candidate: CandidateTimetable) => {
-    candidates.push(candidate);
-    candidates.sort(compareCandidates);
+  const pushCandidate = (candidate: CandidateTimetable, fingerprint: string) => {
+    const existing = candidatesByFingerprint.get(fingerprint);
 
-    if (candidates.length > maxResults) {
-      candidates.pop();
+    // Keep the strictly higher-scoring candidate; ties keep the existing/first.
+    if (existing && compareCandidates(candidate, existing) >= 0) {
+      return;
     }
+
+    candidatesByFingerprint.set(fingerprint, candidate);
   };
 
   const dfs = (depth: number, selectedSections: SelectedSection[]) => {
@@ -104,7 +112,7 @@ export function generate(
       const metrics = evaluateRules(config.rules, context);
       const candidate = makeCandidate(selectedSections, metrics, scoreMetrics(config.rules, metrics), context.extras);
       stats.feasible += 1;
-      pushCandidate(candidate);
+      pushCandidate(candidate, scheduleFingerprint(selectedSections));
       return;
     }
 
@@ -141,7 +149,9 @@ export function generate(
 
   dfs(0, []);
 
-  candidates.sort(compareCandidates);
+  const candidates = [...candidatesByFingerprint.values()]
+    .sort(compareCandidates)
+    .slice(0, maxResults);
 
   const result: GenerationResult = {
     candidates,
@@ -402,6 +412,45 @@ function candidateKey(candidate: CandidateTimetable): string {
   return candidate.selections
     .map((selection) => `${selection.courseCode}:${selection.teachMethod}:${selection.sectionName}`)
     .join("|");
+}
+
+/**
+ * A canonical string that identifies a candidate by what a student actually
+ * sees on their schedule, ignoring section names. Two candidates share a
+ * fingerprint iff every selection matches on course/term/teach method, active
+ * meeting times + buildings + repetition, instructors, and delivery modes.
+ * Sections that differ only in name (TUT0101 vs TUT0102 with identical
+ * meetings) collapse; genuine differences in time, instructor, or delivery do
+ * not. Per-selection strings and their meetings are sorted so ordering is
+ * irrelevant.
+ */
+function scheduleFingerprint(selectedSections: readonly SelectedSection[]): string {
+  return selectedSections
+    .map((selectedSection) => selectionFingerprint(selectedSection))
+    .sort()
+    .join("||");
+}
+
+function selectionFingerprint(selectedSection: SelectedSection): string {
+  const { section } = selectedSection;
+  const meetings = activeMeetings(section)
+    .map(
+      (meeting) =>
+        `${meeting.start.day}@${meeting.start.millisofday}-${meeting.end.millisofday}` +
+        `#${meeting.building.buildingCode}~${meeting.repetitionTime}`,
+    )
+    .sort()
+    .join(",");
+  const deliveryModes = [...sectionDeliveryModes(section)].sort().join(",");
+
+  return [
+    selectedSection.courseCode,
+    selectedSection.sectionCode,
+    selectedSection.teachMethod,
+    meetings,
+    sectionInstructorText(section),
+    deliveryModes,
+  ].join("::");
 }
 
 function compareSelectedSections(first: SelectedSection, second: SelectedSection): number {
