@@ -96,7 +96,9 @@ export function WeekGrid({
   return (
     <div
       className={cn(
-        "rounded-md border bg-background",
+        // `isolate` keeps the grid's internal z-indexed blocks from escaping to
+        // paint over sticky ancestors (e.g. the Generate panel header).
+        "isolate rounded-md border bg-background",
         compact ? "overflow-hidden rounded-sm text-[8px]" : "overflow-x-auto",
         className,
       )}
@@ -132,7 +134,7 @@ export function WeekGrid({
                 className="absolute right-1 -translate-y-2 text-[10px] text-muted-foreground"
                 style={{ top: percent(hour, startMillis, endMillis) }}
               >
-                {millisofdayToHHMM(hour)}
+                {formatHour12(hour)}
               </div>
             ))}
           </div>
@@ -397,6 +399,14 @@ function buildPaintCells(startMillis: number, endMillis: number): number[] {
 
 function hoursToMillis(hour: number): number {
   return hour * HOUR_MILLIS;
+}
+
+/** Formats an on-the-hour millisofday value as a 12-hour label (e.g. "8 AM"). */
+function formatHour12(millisofday: number): string {
+  const hour24 = Math.floor(millisofday / HOUR_MILLIS);
+  const period = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${hour12} ${period}`;
 }
 
 function percent(value: number, start: number, end: number): string {
