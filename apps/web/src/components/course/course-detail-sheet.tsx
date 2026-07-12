@@ -9,7 +9,7 @@ import type {
   TeachMethod,
 } from "@better-ttb/shared";
 import { formatDay, millisofdayToHHMM } from "@better-ttb/shared";
-import { Pin, PinOff, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronRight, Pin, PinOff, RefreshCw } from "lucide-react";
 import * as React from "react";
 
 import buildings from "@/data/buildings.json";
@@ -22,7 +22,7 @@ import {
   DELIVERY_MODE_LABELS,
   getCourseBreadthCodes,
 } from "@/lib/search";
-import { sanitizeHtml } from "@/lib/sanitize";
+import { sanitizeHtml, stripHtml } from "@/lib/sanitize";
 import {
   getSectionAvailability,
   selectedOthersFor,
@@ -212,6 +212,9 @@ export function CourseDetailBody({
   const breadths = getCourseBreadthCodes(course);
   const groupedSections = groupSectionsByTeachMethod(course.sections);
   const courseKeyValue = courseKey(course);
+  const visibleNotes = course.notes.filter(
+    (note) => stripHtml(note.content).length > 0,
+  );
 
   return (
     <div className="space-y-6">
@@ -278,11 +281,11 @@ export function CourseDetailBody({
         </div>
       </section>
 
-      {course.notes.length > 0 && (
+      {visibleNotes.length > 0 && (
         <section className="space-y-2">
           <h3 className="text-sm font-semibold">Notes</h3>
           <div className="space-y-2">
-            {course.notes.map((note, index) => (
+            {visibleNotes.map((note, index) => (
               <div
                 key={`${note.name}-${index}`}
                 className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground"
@@ -456,48 +459,90 @@ function EnrolmentControlsPanel({
   }
 
   const divisionCode = course.faculty?.code ?? "";
+  const codes = [...groups.keys()].filter(Boolean);
 
   return (
     <section className="space-y-3">
-      <h3 className="text-sm font-semibold">Enrolment controls</h3>
-      <div className="space-y-3">
-        {[...groups.entries()].map(([code, group]) => {
-          const sectionNames = group.sections.map((s) => s.name).join(", ");
-          const heading = code ? `${code} — ${sectionNames}` : sectionNames;
-          const description = code
-            ? enrolmentIndicatorDescription(indicators, divisionCode, code)
-            : null;
-          const lineItems = enrolmentControlLineItems(group.controls);
-
-          return (
-            <div
-              key={code || "__unrestricted__"}
-              className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground"
-            >
-              <p className="mb-2 font-medium text-foreground">{heading}</p>
-              {description ? (
-                <div
-                  className="mb-2 [&_a]:text-primary"
-                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(description) }}
-                />
-              ) : code ? (
-                <p className="mb-2 text-muted-foreground">
-                  Enrolment restrictions apply to this activity. Check the official
-                  timetable for details.
-                </p>
-              ) : null}
-              {lineItems.length > 0 && (
-                <ul className="list-disc space-y-0.5 pl-4">
-                  {lineItems.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          );
-        })}
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-semibold">Enrolment controls</h3>
+        {codes.map((code) => (
+          <Badge key={code} variant="secondary">
+            {code}
+          </Badge>
+        ))}
+      </div>
+      <div className="space-y-2">
+        {[...groups.entries()].map(([code, group]) => (
+          <EnrolmentControlGroup
+            key={code || "__unrestricted__"}
+            code={code}
+            group={group}
+            indicators={indicators}
+            divisionCode={divisionCode}
+          />
+        ))}
       </div>
     </section>
+  );
+}
+
+function EnrolmentControlGroup({
+  code,
+  group,
+  indicators,
+  divisionCode,
+}: {
+  code: string;
+  group: { sections: Section[]; controls: EnrolmentControl[] };
+  indicators: DivisionalEnrolmentIndicators;
+  divisionCode: string;
+}) {
+  const [expanded, setExpanded] = React.useState(false);
+  const sectionNames = group.sections.map((s) => s.name).join(", ");
+  const heading = code ? `${code} — ${sectionNames}` : sectionNames;
+  const description = code
+    ? enrolmentIndicatorDescription(indicators, divisionCode, code)
+    : null;
+  const lineItems = enrolmentControlLineItems(group.controls);
+
+  return (
+    <div className="rounded-md border bg-muted/30 text-sm text-muted-foreground">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-2 p-3 text-left font-medium text-foreground"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span>{heading}</span>
+        {expanded ? (
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        )}
+      </button>
+      {expanded && (
+        <div className="space-y-2 px-3 pb-3">
+          {description ? (
+            <div
+              className="[&_a]:text-primary"
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(description) }}
+            />
+          ) : code ? (
+            <p className="text-muted-foreground">
+              Enrolment restrictions apply to this activity. Check the official
+              timetable for details.
+            </p>
+          ) : null}
+          {lineItems.length > 0 && (
+            <ul className="list-disc space-y-0.5 pl-4">
+              {lineItems.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

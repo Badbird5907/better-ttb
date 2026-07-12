@@ -30,12 +30,16 @@ export function MiniPrereqTree({
     [graph, code],
   );
 
+  if (!hasStructuredPrereq && dependents.length === 0) {
+    return null;
+  }
+
   return (
     <section className="space-y-3">
       <h3 className="text-sm font-semibold">Prerequisite tree</h3>
 
-      <div className="rounded-md border p-3">
-        {hasStructuredPrereq && prereq?.root ? (
+      {hasStructuredPrereq && prereq?.root && (
+        <div className="rounded-md border p-3">
           <PrereqBranch
             node={prereq.root}
             graph={graph}
@@ -43,12 +47,8 @@ export function MiniPrereqTree({
             visited={new Set([code])}
             depth={0}
           />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            No structured prerequisite data.
-          </p>
-        )}
-      </div>
+        </div>
+      )}
 
       <RequiredBy
         dependents={dependents}
