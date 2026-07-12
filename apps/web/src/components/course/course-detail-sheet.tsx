@@ -1,6 +1,8 @@
 import type {
   Course,
   DeliveryMode,
+  DivisionalEnrolmentIndicators,
+  EnrolmentControl,
   MeetingTime,
   Section,
   SectionCode,
@@ -13,10 +15,19 @@ import * as React from "react";
 import buildings from "@/data/buildings.json";
 import type { RequisiteGraph } from "@/lib/requisites/graph";
 import {
+  enrolmentControlLineItems,
+  enrolmentIndicatorDescription,
+} from "@/lib/enrolment";
+import {
   DELIVERY_MODE_LABELS,
   getCourseBreadthCodes,
 } from "@/lib/search";
 import { sanitizeHtml } from "@/lib/sanitize";
+import {
+  getSectionAvailability,
+  selectedOthersFor,
+  type SectionAvailability,
+} from "@/lib/section-status";
 import {
   courseKey,
   sectionConflictsWithPlan,
@@ -24,6 +35,7 @@ import {
 } from "@/lib/timetable";
 import { cn } from "@/lib/utils";
 import type { Plan } from "@/stores/plan";
+import { useCatalogStore } from "@/stores/catalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -193,6 +205,9 @@ export function CourseDetailBody({
   onOpenCourse?: ((code: string) => void) | undefined;
   graph?: RequisiteGraph | null;
 }) {
+  const divisionalEnrolmentIndicators = useCatalogStore(
+    (state) => state.divisionalEnrolmentIndicators,
+  );
   const info = course.cmCourseInfo;
   const breadths = getCourseBreadthCodes(course);
   const groupedSections = groupSectionsByTeachMethod(course.sections);
@@ -278,9 +293,19 @@ export function CourseDetailBody({
         </section>
       )}
 
+      <EnrolmentControlsPanel
+        course={course}
+        indicators={divisionalEnrolmentIndicators}
+      />
+
       <section className="space-y-3">
         <h3 className="text-sm font-semibold">Sections</h3>
-        {groupedSections.map(([teachMethod, sections]) => (
+        {groupedSections.map(([teachMethod, sections]) => {
+          // Sections chosen for this course's OTHER teach methods gate the
+          // availability (linkage) of every row in this group.
+          const selectedOthers = selectedOthersFor(course, chosen, teachMethod);
+
+          return (
           <div key={teachMethod} className="overflow-hidden rounded-md border">
             <div className="border-b bg-muted/50 px-3 py-2 text-sm font-medium">
               {teachMethod}
@@ -306,6 +331,10 @@ export function CourseDetailBody({
                       courseKeyValue,
                       planSelectedSections,
                     );
+                    const availability = getSectionAvailability(
+                      section,
+                      selectedOthers,
+                    );
 
                     return (
                       <SectionRow
@@ -313,6 +342,7 @@ export function CourseDetailBody({
                         section={section}
                         chosen={isChosen}
                         conflict={conflict}
+                        availability={availability}
                         onToggle={() => {
                           if (isChosen) {
                             onClearChoice(
@@ -336,7 +366,8 @@ export function CourseDetailBody({
               </table>
             </div>
           </div>
-        ))}
+          );
+        })}
       </section>
     </div>
   );
@@ -366,24 +397,139 @@ export function RequirementBlock({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Enrolment controls panel
+// ---------------------------------------------------------------------------
+
+/**
+ * Groups the course's sections by distinct `enrolmentInd` code and renders
+ * a description + line-item list for each group.  Sections with controls but
+ * no indicator code are collected under a generic "Restricted" group.
+ * The panel is omitted entirely when no section carries any enrolment info.
+ */
+function EnrolmentControlsPanel({
+  course,
+  indicators,
+}: {
+  course: Course;
+  indicators: DivisionalEnrolmentIndicators;
+}) {
+  // Build groups: Map<indicatorCode, { sections, controls }>
+  // "" key = no indicator but has controls
+  type Group = { sections: Section[]; controls: EnrolmentControl[] };
+  const groups = new Map<string, Group>();
+
+  for (const section of course.sections) {
+    const ind = section.enrolmentInd ?? "";
+    const hasControls = section.enrolmentControls.length > 0;
+
+    if (!ind && !hasControls) {
+      continue;
+    }
+
+    const key = ind || "";
+
+    if (!groups.has(key)) {
+      groups.set(key, { sections: [], controls: [] });
+    }
+
+    // Non-null assertion safe: we just set it above
+    const group = groups.get(key)!;
+    group.sections.push(section);
+
+    // Merge controls, de-duplicating by reference identity isn't needed —
+    // the line-item algorithm dedupes output strings.
+    for (const c of section.enrolmentControls) {
+      group.controls.push(c);
+    }
+  }
+
+  // Also ensure sections with empty ind but no controls aren't shown
+  // (they were skipped above). Re-check the "" key.
+  const emptyGroup = groups.get("");
+  if (emptyGroup && emptyGroup.controls.length === 0) {
+    groups.delete("");
+  }
+
+  if (groups.size === 0) {
+    return null;
+  }
+
+  const divisionCode = course.faculty?.code ?? "";
+
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-semibold">Enrolment controls</h3>
+      <div className="space-y-3">
+        {[...groups.entries()].map(([code, group]) => {
+          const sectionNames = group.sections.map((s) => s.name).join(", ");
+          const heading = code ? `${code} — ${sectionNames}` : sectionNames;
+          const description = code
+            ? enrolmentIndicatorDescription(indicators, divisionCode, code)
+            : null;
+          const lineItems = enrolmentControlLineItems(group.controls);
+
+          return (
+            <div
+              key={code || "__unrestricted__"}
+              className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground"
+            >
+              <p className="mb-2 font-medium text-foreground">{heading}</p>
+              {description ? (
+                <div
+                  className="mb-2 [&_a]:text-primary"
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(description) }}
+                />
+              ) : code ? (
+                <p className="mb-2 text-muted-foreground">
+                  Enrolment restrictions apply to this activity. Check the official
+                  timetable for details.
+                </p>
+              ) : null}
+              {lineItems.length > 0 && (
+                <ul className="list-disc space-y-0.5 pl-4">
+                  {lineItems.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function SectionRow({
   section,
   chosen,
   conflict,
+  availability,
   onToggle,
 }: {
   section: Section;
   chosen: boolean;
   conflict: PlanSelectedSection | null;
+  availability: SectionAvailability;
   onToggle: () => void;
 }) {
   const cancelled = section.cancelInd === "Y";
+  // A row can be disallowed for reasons other than cancellation (linkage,
+  // closed). Cancelled rows keep their existing line-through look; the extra
+  // muted-row treatment applies to the non-cancelled disallowed cases.
+  const disallowed = availability.disabled;
+  const disallowedNotCancelled = disallowed && !cancelled;
+  // Only block the toggle for rows the user has NOT chosen: a chosen-but-now-
+  // disallowed row must keep an active unpin button so it can be cleared.
+  const toggleDisabled = disallowed && !chosen;
 
   return (
     <tr
       className={cn(
         "border-t",
         cancelled && "text-muted-foreground line-through",
+        disallowedNotCancelled && "bg-muted/40 opacity-70",
         chosen && "bg-primary/5",
         conflict && !chosen && "bg-destructive/5",
       )}
@@ -395,7 +541,7 @@ function SectionRow({
               type="button"
               variant={chosen ? "secondary" : "ghost"}
               size="icon-xs"
-              disabled={cancelled}
+              disabled={toggleDisabled}
               onClick={onToggle}
             >
               {chosen ? <PinOff /> : <Pin />}
@@ -411,10 +557,22 @@ function SectionRow({
       </td>
       <td className="px-3 py-3 align-top font-medium">
         <div className="space-y-1">
-          <span>{section.name}</span>
+          <span className="inline-flex items-center gap-1.5">
+            {section.name}
+            {section.enrolmentInd && (
+              <Badge variant="outline" className="text-[10px] px-1 py-0 font-normal text-muted-foreground">
+                {section.enrolmentInd}
+              </Badge>
+            )}
+          </span>
           {conflict && (
             <div className="text-xs font-normal text-destructive no-underline">
               Conflicts with {conflict.courseCode} {conflict.section.name}
+            </div>
+          )}
+          {disallowedNotCancelled && availability.reason && (
+            <div className="text-xs font-normal text-muted-foreground no-underline">
+              {availability.reason}
             </div>
           )}
         </div>

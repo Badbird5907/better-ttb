@@ -10,6 +10,13 @@ import {
 } from "../src";
 import { course, meeting, ms, section } from "./fixtures";
 
+// Helper: build a LinkedMeetingSection ref from "LEC0101" → { teachMethod: "LEC", sectionNumber: "0101", type: null }
+function ref(name: string) {
+  const teachMethod = name.replace(/\d.*$/, "");
+  const sectionNumber = name.slice(teachMethod.length);
+  return { teachMethod, sectionNumber, type: null };
+}
+
 const noRules: RuleConfig[] = [];
 
 describe("detectConflicts", () => {
@@ -455,5 +462,88 @@ describe("search behavior", () => {
     }
     expect(result.candidates[0]?.score).toBeGreaterThanOrEqual(result.candidates.at(-1)?.score ?? 0);
     expect(result.stats.feasible).toBeGreaterThanOrEqual(result.candidates.length);
+  });
+});
+
+describe("linked section enforcement", () => {
+  // CSC207-style linkage:
+  //   LEC0101 → linkedMeetingSections: []   (must be pointed to by a TUT)
+  //   LEC0301 → linkedMeetingSections: []
+  //   TUT0201 → linkedMeetingSections: [ref("LEC0101")]
+  //   TUT0301 → linkedMeetingSections: [ref("LEC0301")]
+  // Valid pairs: (LEC0101, TUT0201) and (LEC0301, TUT0301).
+  // Invalid pairs: (LEC0101, TUT0301) and (LEC0301, TUT0201).
+
+  it("only produces valid LEC/TUT pairs according to CSC207-style linkage", () => {
+    const input = course("CSC207H1", "F", [
+      section("LEC0101", "LEC", [meeting(1, ms(9), ms(10))], {
+        linkedMeetingSections: [],
+      }),
+      section("LEC0301", "LEC", [meeting(1, ms(11), ms(12))], {
+        linkedMeetingSections: [],
+      }),
+      section("TUT0201", "TUT", [meeting(2, ms(9), ms(10))], {
+        linkedMeetingSections: [ref("LEC0101")],
+      }),
+      section("TUT0301", "TUT", [meeting(2, ms(11), ms(12))], {
+        linkedMeetingSections: [ref("LEC0301")],
+      }),
+    ]);
+
+    const result = generate([{ course: input }], { rules: noRules, maxResults: 10 });
+
+    // Only 2 valid combos: (LEC0101+TUT0201) and (LEC0301+TUT0301).
+    expect(result.candidates).toHaveLength(2);
+
+    const pairs = result.candidates.map((c) =>
+      c.selections.map((s) => s.sectionName).join("+"),
+    );
+    expect(pairs).toContain("LEC0101+TUT0201");
+    expect(pairs).toContain("LEC0301+TUT0301");
+    // Cross-pairs must not appear.
+    expect(pairs).not.toContain("LEC0101+TUT0301");
+    expect(pairs).not.toContain("LEC0301+TUT0201");
+  });
+
+  it("reports infeasible when locked sections form a linkage-violating pair", () => {
+    // Lock LEC0101 + TUT0301 — an explicitly invalid pair per linkage rules.
+    const input = course("CSC207H1", "F", [
+      section("LEC0101", "LEC", [meeting(1, ms(9), ms(10))], {
+        linkedMeetingSections: [],
+      }),
+      section("LEC0301", "LEC", [meeting(1, ms(11), ms(12))], {
+        linkedMeetingSections: [],
+      }),
+      section("TUT0201", "TUT", [meeting(2, ms(9), ms(10))], {
+        linkedMeetingSections: [ref("LEC0101")],
+      }),
+      section("TUT0301", "TUT", [meeting(2, ms(11), ms(12))], {
+        linkedMeetingSections: [ref("LEC0301")],
+      }),
+    ]);
+
+    const result = generate(
+      [{ course: input, locked: { LEC: "LEC0101", TUT: "TUT0301" } }],
+      { rules: noRules },
+    );
+
+    expect(result.candidates).toHaveLength(0);
+    expect(result.infeasible).toBeDefined();
+    expect(result.infeasible?.conflictingCourses).toContain("CSC207H1");
+    expect(result.infeasible?.reason).toMatch(/CSC207H1/);
+  });
+
+  it("does not restrict courses where all sections have null linkage", () => {
+    const input = course("CSC108H1", "F", [
+      section("LEC0101", "LEC", [meeting(1, ms(9), ms(10))]),
+      section("LEC0201", "LEC", [meeting(1, ms(11), ms(12))]),
+      section("TUT0101", "TUT", [meeting(2, ms(9), ms(10))]),
+      section("TUT0201", "TUT", [meeting(2, ms(11), ms(12))]),
+    ]);
+
+    const result = generate([{ course: input }], { rules: noRules, maxResults: 10 });
+
+    // All 4 cross-product combos are valid: null linkage imposes no constraint.
+    expect(result.candidates).toHaveLength(4);
   });
 });

@@ -19,6 +19,7 @@ const block: TimetableBlock = {
   endMillis: 11 * 60 * 60 * 1000,
   color: "#7c3aed",
   conflict: false,
+  disallowed: false,
   preview: false,
 };
 
@@ -47,5 +48,32 @@ describe("WeekGrid", () => {
 
     expect(rows?.[1]).toBe("784px"); // 14 hours x 56px
     expect(html).not.toContain("NaN");
+  });
+
+  it("renders a disallowed block with grey ring and grey borderColor", () => {
+    const disallowedBlock: TimetableBlock = { ...block, disallowed: true };
+    const html = renderToStaticMarkup(React.createElement(WeekGrid, { blocks: [disallowedBlock] }));
+
+    // Grey ring class applied for disallowed-only blocks
+    expect(html).toContain("ring-slate-500");
+    // Grey borderColor via inline style
+    expect(html).toContain("#64748b");
+    // Red conflict classes must NOT appear
+    expect(html).not.toContain("ring-red-600");
+    expect(html).not.toContain("#dc2626");
+  });
+
+  it("renders conflict red when a block has both conflict and disallowed (conflict wins)", () => {
+    const conflictAndDisallowedBlock: TimetableBlock = { ...block, conflict: true, disallowed: true };
+    const html = renderToStaticMarkup(
+      React.createElement(WeekGrid, { blocks: [conflictAndDisallowedBlock] }),
+    );
+
+    // Red conflict classes must appear
+    expect(html).toContain("ring-red-600");
+    expect(html).toContain("#dc2626");
+    // Grey ring must NOT appear (conflict wins)
+    expect(html).not.toContain("ring-slate-500");
+    expect(html).not.toContain("#64748b");
   });
 });

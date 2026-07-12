@@ -71,7 +71,21 @@ export interface EnrolmentControl {
   subject?: CourseUnit;
   quantity?: number;
   sequence?: number;
+  subjectPost?: CourseUnit;
+  typeOfProgram?: CourseUnit;
+  designation?: CourseUnit;
+  primaryOrg?: CourseUnit;
+  associatedOrg?: CourseUnit;
+  secondOrg?: CourseUnit;
+  adminOrg?: CourseUnit;
+  collaborativeOrgGroupCode?: string;
   [key: string]: unknown;
+}
+
+export interface LinkedMeetingSection {
+  teachMethod: string;
+  sectionNumber: string;
+  type: string | null;
 }
 
 export interface Section {
@@ -94,7 +108,7 @@ export interface Section {
   subTitle: string;
   notes: Note[];
   enrolmentControls: EnrolmentControl[];
-  linkedMeetingSections: unknown[] | null;
+  linkedMeetingSections: LinkedMeetingSection[] | null;
   [key: string]: unknown;
 }
 
@@ -149,8 +163,19 @@ export interface TtbPageableCourse {
   direction: TtbDirection;
 }
 
+export interface DivisionalEnrolmentIndicator {
+  code: string; // e.g. "P", "P*", "E", "R1"
+  name: string; // explanation text
+}
+
+export type DivisionalEnrolmentIndicators = Record<
+  string,
+  DivisionalEnrolmentIndicator[]
+>; // keyed by division code e.g. "ARTSC"
+
 export interface TtbPageableCoursesPayload {
   pageableCourse: TtbPageableCourse;
+  divisionalEnrolmentIndicators?: DivisionalEnrolmentIndicators;
 }
 
 export interface TtbResponse<TPayload> {

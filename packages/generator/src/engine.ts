@@ -1,4 +1,5 @@
 import type { Section, TeachMethod } from "@better-ttb/shared";
+import { selectionSatisfiesLinkage } from "@better-ttb/shared";
 
 import { conflictsBetweenSections, meetingsConflict } from "./conflicts";
 import {
@@ -65,7 +66,7 @@ export function generate(
       candidates: [],
       stats,
       infeasible: {
-        reason: `No selectable sections for ${impossiblePlan.courseCode}. Check locks, exclusions, and cancellations.`,
+        reason: `No selectable sections for ${impossiblePlan.courseCode}. Check locks, exclusions, cancellations, or sections that must be taken together (linked sections).`,
         conflictingCourses: [impossiblePlan.courseCode],
       },
     };
@@ -206,7 +207,10 @@ function buildCoursePlan(input: CourseInput, inputIndex: number): CoursePlan {
         section,
       }));
 
-      if (!hasConflictWithinSelection(selectedSections)) {
+      if (
+        !hasConflictWithinSelection(selectedSections) &&
+        selectionSatisfiesLinkage(selectedSections.map((s) => s.section))
+      ) {
         choices.push({
           key: selectedSections
             .map((selectedSection) => `${selectedSection.teachMethod}:${selectedSection.section.name}`)

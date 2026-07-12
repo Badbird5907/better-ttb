@@ -3,6 +3,7 @@ import type {
   DayNumber,
   DeliveryMode,
   Instructor,
+  LinkedMeetingSection,
   MeetingTime,
   RepetitionTime,
   Section,
@@ -60,6 +61,7 @@ export function section(
     tbaInd?: string;
     deliveryModes?: DeliveryMode[];
     instructors?: Array<Partial<Instructor>>;
+    linkedMeetingSections?: LinkedMeetingSection[] | null;
   } = {},
 ): Section {
   return {
@@ -89,7 +91,9 @@ export function section(
     subTitle: "",
     notes: [],
     enrolmentControls: [],
-    linkedMeetingSections: null,
+    linkedMeetingSections: options.linkedMeetingSections !== undefined
+      ? options.linkedMeetingSections
+      : null,
   };
 }
 

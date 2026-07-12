@@ -1,4 +1,9 @@
-import type { Course, TtbPageableCourse, TtbPageableCoursesResponse } from "@better-ttb/shared";
+import type {
+  Course,
+  DivisionalEnrolmentIndicators,
+  TtbPageableCourse,
+  TtbPageableCoursesResponse,
+} from "@better-ttb/shared";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -82,6 +87,105 @@ describe("runScrapeChunk", () => {
     expect(catalog.courses).toHaveLength(1);
     expect(catalog.courses[0]?.id).toBe(duplicate.id);
   });
+
+  it("accumulates divisionalEnrolmentIndicators into the catalog artifact", async () => {
+    const sessions = ["20269"];
+    const db = new MemoryD1();
+    const kv = new MemoryKv();
+    const fetchImpl = createPageFetch(
+      [
+        makePage(makeCourses(1, 20), 25, 1),
+        makePage(makeCourses(21, 5), 25, 2),
+      ],
+      [],
+      [
+        { ARTSC: [{ code: "P", name: "Priority enrolment." }] },
+        {
+          ARTSC: [{ code: "P", name: "Priority enrolment." }],
+          APSC: [{ code: "R1", name: "Reserved." }],
+        },
+      ],
+    );
+
+    const first = await runScrapeChunk(
+      { sessions, maxPages: 1 },
+      makeDeps(db, kv, fetchImpl),
+    );
+    expect(first.status).toBe("running");
+
+    // Old-style cursor without the field must still resume; the persisted
+    // cursor already carries the accumulated indicators though.
+    const cursor = JSON.parse(
+      kv.store.get(SCRAPE_CURSOR_KEY) ?? "{}",
+    ) as Record<string, unknown>;
+    expect(cursor.divisionalEnrolmentIndicators).toEqual({
+      ARTSC: [{ code: "P", name: "Priority enrolment." }],
+    });
+
+    const second = await runScrapeChunk(
+      { sessions, maxPages: 1 },
+      makeDeps(db, kv, fetchImpl),
+    );
+    expect(second.status).toBe("complete");
+
+    const catalog = parseCatalog(kv.store.get(catalogKey(sessions)));
+    expect(catalog.divisionalEnrolmentIndicators).toEqual({
+      ARTSC: [{ code: "P", name: "Priority enrolment." }],
+      APSC: [{ code: "R1", name: "Reserved." }],
+    });
+  });
+
+  it("omits divisionalEnrolmentIndicators when the API returns none", async () => {
+    const sessions = ["20269"];
+    const db = new MemoryD1();
+    const kv = new MemoryKv();
+    const fetchImpl = createPageFetch([makePage(makeCourses(1, 3), 3, 1)]);
+
+    const result = await runScrapeChunk(
+      { sessions, maxPages: 1 },
+      makeDeps(db, kv, fetchImpl),
+    );
+    expect(result.status).toBe("complete");
+
+    const catalog = parseCatalog(kv.store.get(catalogKey(sessions)));
+    expect(catalog.divisionalEnrolmentIndicators).toBeUndefined();
+  });
+
+  it("resumes from an old cursor JSON that lacks the indicators field", async () => {
+    const sessions = ["20269"];
+    const db = new MemoryD1();
+    const kv = new MemoryKv();
+
+    // Seed a legacy cursor (no divisionalEnrolmentIndicators) for run 1.
+    db.createRun("2026-07-10T12:00:00.000Z", "running");
+    kv.store.set(
+      SCRAPE_CURSOR_KEY,
+      JSON.stringify({
+        sessions,
+        page: 1,
+        total: null,
+        runId: 1,
+        startedAt: "2026-07-10T12:00:00.000Z",
+      }),
+    );
+
+    const fetchImpl = createPageFetch(
+      [makePage(makeCourses(1, 2), 2, 1)],
+      [],
+      [{ ARTSC: [{ code: "P", name: "Priority enrolment." }] }],
+    );
+
+    const result = await runScrapeChunk(
+      { sessions, maxPages: 1 },
+      makeDeps(db, kv, fetchImpl),
+    );
+
+    expect(result.status).toBe("complete");
+    const catalog = parseCatalog(kv.store.get(catalogKey(sessions)));
+    expect(catalog.divisionalEnrolmentIndicators).toEqual({
+      ARTSC: [{ code: "P", name: "Priority enrolment." }],
+    });
+  });
 });
 
 function makeDeps(
@@ -129,6 +233,7 @@ function makeCourse(index: number): Course {
 function createPageFetch(
   pages: TtbPageableCourse[],
   requestBodies: unknown[] = [],
+  indicatorsByPage: Array<DivisionalEnrolmentIndicators | undefined> = [],
 ): typeof fetch {
   let index = 0;
 
@@ -139,11 +244,15 @@ function createPageFetch(
       throw new Error(`Unexpected fetch call ${index + 1}`);
     }
 
+    const indicators = indicatorsByPage[index];
     requestBodies.push(JSON.parse(String(init?.body)) as unknown);
     index += 1;
 
     const response: TtbPageableCoursesResponse = {
-      payload: { pageableCourse: page },
+      payload: {
+        pageableCourse: page,
+        ...(indicators ? { divisionalEnrolmentIndicators: indicators } : {}),
+      },
       status: [],
     };
 

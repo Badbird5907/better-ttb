@@ -214,6 +214,7 @@ export function WeekGrid({
                       "absolute z-30 overflow-hidden rounded-md border p-2 text-left text-white shadow-sm transition-opacity",
                       "focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
                       block.conflict && "border-red-600 ring-1 ring-red-600",
+                      !block.conflict && block.disallowed && "opacity-60 saturate-50 ring-1 ring-slate-500",
                       block.preview && "border-dashed",
                       faded && "opacity-35",
                       compact && "rounded-sm border p-0.5 shadow-none",
@@ -228,7 +229,11 @@ export function WeekGrid({
                       left,
                       width,
                       backgroundColor: block.color,
-                      borderColor: block.conflict ? "#dc2626" : "rgba(255,255,255,0.55)",
+                      borderColor: block.conflict
+                        ? "#dc2626"
+                        : block.disallowed
+                          ? "#64748b"
+                          : "rgba(255,255,255,0.55)",
                     }}
                     onClick={() => onBlockClick?.(block)}
                     onMouseEnter={() => setHoveredCourseKey(block.courseKey)}

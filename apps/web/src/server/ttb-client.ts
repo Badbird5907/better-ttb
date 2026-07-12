@@ -1,4 +1,6 @@
 import type {
+  DivisionalEnrolmentIndicator,
+  DivisionalEnrolmentIndicators,
   TtbCourseLookupResponse,
   TtbCourseSearchBody,
   TtbPageableCourse,
@@ -63,10 +65,15 @@ export function buildPageableCoursesBody(
   };
 }
 
+export interface PageableCoursesResult {
+  pageableCourse: TtbPageableCourse;
+  divisionalEnrolmentIndicators: DivisionalEnrolmentIndicators;
+}
+
 export async function getPageableCourses(
   body: TtbCourseSearchBody,
   options: TtbClientOptions = {},
-): Promise<TtbPageableCourse> {
+): Promise<PageableCoursesResult> {
   const requestBody = normalizePageableCoursesBody(body);
   const responseBody = await requestJson<TtbPageableCoursesResponse>(
     `${getBaseUrl(options)}/getPageableCourses`,
@@ -82,7 +89,10 @@ export async function getPageableCourses(
   );
 
   if (responseBody === null) {
-    return emptyPageableCourse(requestBody);
+    return {
+      pageableCourse: emptyPageableCourse(requestBody),
+      divisionalEnrolmentIndicators: {},
+    };
   }
 
   return parsePageableCoursesResponse(responseBody, requestBody);
@@ -179,14 +189,53 @@ async function readJson(response: Response): Promise<unknown> {
 function parsePageableCoursesResponse(
   response: TtbPageableCoursesResponse,
   requestBody: TtbCourseSearchBody,
-): TtbPageableCourse {
+): PageableCoursesResult {
   const pageableCourse = response.payload?.pageableCourse;
 
   if (!pageableCourse) {
     throw new TtbApiError("TTB response missing pageableCourse payload", 200, response);
   }
 
-  return pageableCourse;
+  return {
+    pageableCourse,
+    divisionalEnrolmentIndicators: parseDivisionalEnrolmentIndicators(
+      response.payload?.divisionalEnrolmentIndicators,
+    ),
+  };
+}
+
+function parseDivisionalEnrolmentIndicators(
+  value: unknown,
+): DivisionalEnrolmentIndicators {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const result: DivisionalEnrolmentIndicators = {};
+
+  for (const [division, entries] of Object.entries(value)) {
+    if (!Array.isArray(entries)) {
+      continue;
+    }
+
+    const indicators = entries.filter(isDivisionalEnrolmentIndicator);
+
+    if (indicators.length > 0) {
+      result[division] = indicators;
+    }
+  }
+
+  return result;
+}
+
+function isDivisionalEnrolmentIndicator(
+  value: unknown,
+): value is DivisionalEnrolmentIndicator {
+  return (
+    isRecord(value) &&
+    typeof value.code === "string" &&
+    typeof value.name === "string"
+  );
 }
 
 function normalizePageableCoursesBody(

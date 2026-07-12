@@ -7,7 +7,7 @@ import type {
   SectionCode,
   TeachMethod,
 } from "@better-ttb/shared";
-import { meetingTimesOverlap, parseSessionCode } from "@better-ttb/shared";
+import { meetingTimesOverlap, parseSessionCode, sectionAllowedByLinkage } from "@better-ttb/shared";
 
 import type { PinnedCourse, Plan } from "@/stores/plan";
 
@@ -36,6 +36,7 @@ export interface TimetableBlock {
   endMillis: number;
   color: string;
   conflict: boolean;
+  disallowed: boolean;
   preview: boolean;
 }
 
@@ -176,9 +177,10 @@ export function selectedSectionsFromCandidate(
 export function buildTermBlocks(
   selectedSections: readonly SelectedTimetableSection[],
   term: Term,
-  options: { preview?: boolean } = {},
+  options: { preview?: boolean; disallowedSectionKeys?: ReadonlySet<string> } = {},
 ): { blocks: TimetableBlock[]; unscheduled: UnscheduledSection[] } {
   const conflictSectionKeys = detectTermConflictSectionKeys(selectedSections, term);
+  const disallowedSectionKeys = options.disallowedSectionKeys ?? new Set<string>();
   const blocks: TimetableBlock[] = [];
   const unscheduled: UnscheduledSection[] = [];
 
@@ -216,6 +218,7 @@ export function buildTermBlocks(
         endMillis: meeting.end.millisofday,
         color: colorForCourse(selectedSection.course.code),
         conflict: conflictSectionKeys.has(selectedSection.key),
+        disallowed: disallowedSectionKeys.has(selectedSection.key),
         preview: options.preview ?? false,
       });
     });
@@ -394,6 +397,71 @@ export function selectedSectionKey(
   sectionName: string,
 ): string {
   return `${pinnedKey(pinned)}:${teachMethod}:${sectionName}`;
+}
+
+/**
+ * Projects the richer `SelectedTimetableSection` shape (used by the timetable
+ * rendering pipeline) down to the `PlanSelectedSection` fields the linkage and
+ * conflict helpers need.
+ */
+export function planSelectedFromTimetableSections(
+  selectedSections: readonly SelectedTimetableSection[],
+): PlanSelectedSection[] {
+  return selectedSections.map((selectedSection) => ({
+    courseKey: selectedSection.courseKey,
+    courseCode: selectedSection.course.code,
+    sectionCode: selectedSection.course.sectionCode,
+    teachMethod: selectedSection.teachMethod,
+    section: selectedSection.section,
+  }));
+}
+
+/**
+ * Returns the composite keys of selected sections that violate UofT section
+ * linkage (e.g. a tutorial that must be taken with a different lecture than the
+ * one currently chosen). Sections are grouped by `courseKey`, and each is
+ * checked against the other selected sections of the SAME course that belong to
+ * a DIFFERENT teach method via `sectionAllowedByLinkage`.
+ *
+ * Keys use the same composite format as conflict keys (`selectedSectionKey`) so
+ * callers can pass the result straight into `buildTermBlocks`.
+ */
+export function detectLinkageViolationSectionKeys(
+  selected: readonly PlanSelectedSection[],
+): Set<string> {
+  const byCourse = new Map<string, PlanSelectedSection[]>();
+
+  for (const entry of selected) {
+    const group = byCourse.get(entry.courseKey);
+
+    if (group) {
+      group.push(entry);
+    } else {
+      byCourse.set(entry.courseKey, [entry]);
+    }
+  }
+
+  const keys = new Set<string>();
+
+  for (const group of byCourse.values()) {
+    for (const entry of group) {
+      const selectedOthers = group
+        .filter((other) => other.teachMethod !== entry.teachMethod)
+        .map((other) => other.section);
+
+      if (!sectionAllowedByLinkage(entry.section, selectedOthers)) {
+        keys.add(
+          selectedSectionKey(
+            { courseCode: entry.courseCode, sectionCode: entry.sectionCode },
+            entry.teachMethod,
+            entry.section.name,
+          ),
+        );
+      }
+    }
+  }
+
+  return keys;
 }
 
 export function colorForCourse(courseCode: string): string {
