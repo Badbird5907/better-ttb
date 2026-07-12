@@ -2,13 +2,20 @@ import { Link } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, Network } from "lucide-react";
 import * as React from "react";
 
-import { type ReqNode } from "@/lib/requisites/ast";
+import { type GroupNode, type ReqNode } from "@/lib/requisites/ast";
 import type { RequisiteGraph } from "@/lib/requisites/graph";
+import { cn } from "@/lib/utils";
+import { badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CourseChip, ReqNodeView } from "./requisite-view";
 
 const MAX_DEPTH = 5;
 const DIRECT_DEPENDENT_CAP = 24;
+
+// Within a group, once this many children are out-of-catalog, collapse all but
+// the first few into a single "+N more" chip to keep the tree scannable.
+const OUT_OF_CATALOG_COLLAPSE_THRESHOLD = 4;
+const OUT_OF_CATALOG_KEEP = 3;
 
 interface MiniPrereqTreeProps {
   code: string;
@@ -102,30 +109,133 @@ function PrereqBranch({
     return <ReqNodeView node={node} graph={graph} onOpenCourse={onOpenCourse} />;
   }
 
-  // Group node: label + children. Keep expandability by recursing per child.
+  // Group node (and / or / nOf): collapsible label + children.
+  return (
+    <GroupBranch
+      node={node}
+      graph={graph}
+      onOpenCourse={onOpenCourse}
+      visited={visited}
+      depth={depth}
+    />
+  );
+}
+
+function GroupBranch({
+  node,
+  graph,
+  onOpenCourse,
+  visited,
+  depth,
+}: {
+  node: GroupNode;
+  graph: RequisiteGraph;
+  onOpenCourse: ((code: string) => void) | undefined;
+  visited: Set<string>;
+  depth: number;
+}) {
+  const [collapsed, setCollapsed] = React.useState(false);
+  const [extrasExpanded, setExtrasExpanded] = React.useState(false);
+
   const n = node.type === "nOf" ? node.n : 0;
   const label =
     node.type === "and" ? "ALL OF" : node.type === "or" ? "ONE OF" : `${n} OF`;
 
+  const isOutOfCatalog = React.useCallback(
+    (child: ReqNode) =>
+      child.type === "course" &&
+      graph.nodes.get(child.code)?.inCatalog !== true,
+    [graph],
+  );
+
+  const outOfCatalogCount = React.useMemo(
+    () => node.children.filter(isOutOfCatalog).length,
+    [node.children, isOutOfCatalog],
+  );
+  const collapseExtras =
+    outOfCatalogCount >= OUT_OF_CATALOG_COLLAPSE_THRESHOLD && !extrasExpanded;
+  const hiddenCount = outOfCatalogCount - OUT_OF_CATALOG_KEEP;
+
+  // Render children in order, but once we've shown OUT_OF_CATALOG_KEEP
+  // out-of-catalog leaves, replace the remainder with a single "+N more" chip.
+  const items: React.ReactNode[] = [];
+  let outOfCatalogSeen = 0;
+  node.children.forEach((child, index) => {
+    if (collapseExtras && isOutOfCatalog(child)) {
+      outOfCatalogSeen += 1;
+      if (outOfCatalogSeen > OUT_OF_CATALOG_KEEP) {
+        if (outOfCatalogSeen === OUT_OF_CATALOG_KEEP + 1) {
+          items.push(
+            <div key="more">
+              <MoreChip
+                count={hiddenCount}
+                onClick={() => setExtrasExpanded(true)}
+              />
+            </div>,
+          );
+        }
+        return;
+      }
+    }
+
+    items.push(
+      <div key={index}>
+        <PrereqBranch
+          node={child}
+          graph={graph}
+          onOpenCourse={onOpenCourse}
+          visited={visited}
+          depth={depth}
+        />
+      </div>,
+    );
+  });
+
   return (
     <div className="space-y-1">
-      <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
-      <div className="ml-1 space-y-1.5 border-l border-border/70 pl-3">
-        {node.children.map((child, index) => (
-          <div key={index}>
-            <PrereqBranch
-              node={child}
-              graph={graph}
-              onOpenCourse={onOpenCourse}
-              visited={visited}
-              depth={depth}
-            />
-          </div>
-        ))}
-      </div>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? `Expand ${label} group` : `Collapse ${label} group`}
+        onClick={() => setCollapsed((current) => !current)}
+      >
+        {collapsed ? (
+          <ChevronRight className="size-3.5" />
+        ) : (
+          <ChevronDown className="size-3.5" />
+        )}
+        <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+          {label}
+        </span>
+      </button>
+      {!collapsed && (
+        <div className="ml-1 space-y-1.5 border-l border-border/70 pl-3">
+          {items}
+        </div>
+      )}
     </div>
+  );
+}
+
+function MoreChip({
+  count,
+  onClick,
+}: {
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        badgeVariants({ variant: "outline" }),
+        "cursor-pointer border-dashed font-mono text-xs text-muted-foreground opacity-70 hover:text-foreground hover:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50",
+      )}
+    >
+      +{count} more…
+    </button>
   );
 }
 
