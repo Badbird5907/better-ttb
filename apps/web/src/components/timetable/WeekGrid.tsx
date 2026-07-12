@@ -1,9 +1,11 @@
 import * as React from "react";
 import type { DayNumber } from "@better-ttb/shared";
 import { formatDay, millisofdayToHHMM } from "@better-ttb/shared";
+import { Footprints } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { TimetableBlock } from "@/lib/timetable";
+import { lookupWalkSeconds } from "@/lib/walk-matrix";
 
 export interface BlockedWindow {
   day: DayNumber;
@@ -26,6 +28,15 @@ interface LaidOutBlock extends TimetableBlock {
   laneCount: number;
 }
 
+interface WalkConnector {
+  id: string;
+  day: DayNumber;
+  boundaryMillis: number;
+  fromCode: string;
+  toCode: string;
+  minutes: number;
+}
+
 const CELL_MILLIS = 30 * 60 * 1000;
 const HOUR_MILLIS = 60 * 60 * 1000;
 const DEFAULT_START = hoursToMillis(8);
@@ -44,6 +55,10 @@ export function WeekGrid({
   const [hoveredCourseKey, setHoveredCourseKey] = React.useState<string | null>(null);
   const paintingRef = React.useRef(false);
   const laidOutBlocks = React.useMemo(() => layoutBlocks(blocks), [blocks]);
+  const walkConnectors = React.useMemo(
+    () => (compact ? [] : buildWalkConnectors(laidOutBlocks)),
+    [compact, laidOutBlocks],
+  );
   const days = React.useMemo(
     () => visibleDays(blocks, blockedWindows),
     [blockedWindows, blocks],
@@ -143,6 +158,7 @@ export function WeekGrid({
         {days.map((day) => {
           const dayBlocks = laidOutBlocks.filter((block) => block.day === day);
           const dayBlocked = blockedWindows.filter((window) => window.day === day);
+          const dayWalkConnectors = walkConnectors.filter((connector) => connector.day === day);
 
           return (
             <div
@@ -269,6 +285,24 @@ export function WeekGrid({
                   </button>
                 );
               })}
+              {dayWalkConnectors.map((connector) => (
+                <div
+                  key={connector.id}
+                  className="pointer-events-none absolute left-1/2 z-50 -translate-x-1/2 -translate-y-1/2"
+                  style={{ top: percent(connector.boundaryMillis, startMillis, endMillis) }}
+                >
+                  <div
+                    className={cn(
+                      "pointer-events-auto flex items-center gap-1 rounded-full border border-white/20 bg-neutral-900/95 px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums shadow-md dark:border-white/15 dark:bg-neutral-950/95",
+                      walkConnectorTone(connector.minutes),
+                    )}
+                    title={`Walk ${connector.fromCode} -> ${connector.toCode}, ~${connector.minutes} min`}
+                  >
+                    <Footprints className="size-3 shrink-0" aria-hidden="true" />
+                    <span>{connector.minutes} min</span>
+                  </div>
+                </div>
+              ))}
             </div>
           );
         })}
@@ -276,6 +310,67 @@ export function WeekGrid({
       </div>
     </div>
   );
+}
+
+function buildWalkConnectors(blocks: readonly TimetableBlock[]): WalkConnector[] {
+  return DAY_NUMBERS.flatMap((day) =>
+    buildDayWalkConnectors(blocks.filter((block) => block.day === day)),
+  );
+}
+
+function buildDayWalkConnectors(blocks: readonly TimetableBlock[]): WalkConnector[] {
+  const sorted = [...blocks].sort(
+    (left, right) =>
+      left.startMillis - right.startMillis ||
+      left.endMillis - right.endMillis ||
+      left.id.localeCompare(right.id),
+  );
+  const connectors: WalkConnector[] = [];
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    const previous = sorted[index - 1]!;
+    const next = sorted[index]!;
+
+    if (previous.endMillis !== next.startMillis) {
+      continue;
+    }
+
+    const fromCode = previous.buildingCode.trim();
+    const toCode = next.buildingCode.trim();
+
+    if (!fromCode || !toCode) {
+      continue;
+    }
+
+    const walkSeconds = lookupWalkSeconds(fromCode, toCode);
+
+    if (walkSeconds === null || walkSeconds === 0) {
+      continue;
+    }
+
+    connectors.push({
+      id: `${previous.id}->${next.id}`,
+      day: next.day,
+      boundaryMillis: next.startMillis,
+      fromCode,
+      toCode,
+      minutes: Math.ceil(walkSeconds / 60),
+    });
+  }
+
+  return connectors;
+}
+
+function walkConnectorTone(minutes: number): string {
+  if (minutes >= 10) {
+    return "text-red-400";
+  }
+
+  if (minutes >= 7) {
+    return "text-amber-400";
+  }
+
+  return "text-white";
 }
 
 function layoutBlocks(blocks: readonly TimetableBlock[]): LaidOutBlock[] {

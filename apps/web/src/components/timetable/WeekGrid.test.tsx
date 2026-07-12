@@ -14,6 +14,7 @@ const block: TimetableBlock = {
   teachMethod: "LEC",
   sectionName: "LEC0101",
   room: "BA 1130",
+  buildingCode: "BA",
   day: 1,
   startMillis: 10 * 60 * 60 * 1000,
   endMillis: 11 * 60 * 60 * 1000,
@@ -77,4 +78,59 @@ describe("WeekGrid", () => {
     expect(html).not.toContain("ring-slate-500");
     expect(html).not.toContain("#64748b");
   });
+
+  it("renders a walking connector for back-to-back blocks in different buildings", () => {
+    const nextBlock = nextBackToBackBlock({ buildingCode: "MP", room: "MP 102" });
+    const html = renderToStaticMarkup(React.createElement(WeekGrid, { blocks: [block, nextBlock] }));
+
+    expect(html).toContain("5 min");
+    expect(html).toContain("Walk BA -&gt; MP, ~5 min");
+    expect(html).toContain("text-white");
+  });
+
+  it.each([
+    ["SS", "7 min", "text-amber-400"],
+    ["AH", "15 min", "text-red-400"],
+  ])("uses the walking connector warning tone for %s", (buildingCode, label, toneClass) => {
+    const nextBlock = nextBackToBackBlock({ buildingCode, room: `${buildingCode} 102` });
+    const html = renderToStaticMarkup(React.createElement(WeekGrid, { blocks: [block, nextBlock] }));
+
+    expect(html).toContain(label);
+    expect(html).toContain(toneClass);
+  });
+
+  it("does not render a walking connector when blocks are not truly back-to-back", () => {
+    const nextBlock = nextBackToBackBlock({
+      buildingCode: "MP",
+      room: "MP 102",
+      startMillis: block.endMillis + 5 * 60 * 1000,
+      endMillis: block.endMillis + 65 * 60 * 1000,
+    });
+    const html = renderToStaticMarkup(React.createElement(WeekGrid, { blocks: [block, nextBlock] }));
+
+    expect(html).not.toContain("Walk BA");
+  });
+
+  it("does not render a walking connector for same-building back-to-back blocks", () => {
+    const nextBlock = nextBackToBackBlock({ buildingCode: "BA", room: "BA 2145" });
+    const html = renderToStaticMarkup(React.createElement(WeekGrid, { blocks: [block, nextBlock] }));
+
+    expect(html).not.toContain("Walk BA");
+  });
 });
+
+function nextBackToBackBlock(overrides: Partial<TimetableBlock> = {}): TimetableBlock {
+  return {
+    ...block,
+    id: "MAT137Y1:Y:LEC:LEC0101:0",
+    sectionKey: "MAT137Y1:Y:LEC:LEC0101",
+    courseKey: "MAT137Y1:Y",
+    courseCode: "MAT137Y1",
+    courseName: "Calculus",
+    room: "MP 102",
+    buildingCode: "MP",
+    startMillis: block.endMillis,
+    endMillis: block.endMillis + 60 * 60 * 1000,
+    ...overrides,
+  };
+}

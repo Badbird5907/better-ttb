@@ -32,6 +32,7 @@ export interface TimetableBlock {
   teachMethod: TeachMethod;
   sectionName: string;
   room: string;
+  buildingCode: string;
   day: DayNumber;
   startMillis: number;
   endMillis: number;
@@ -215,6 +216,7 @@ export function buildTermBlocks(
         teachMethod: selectedSection.teachMethod,
         sectionName: selectedSection.section.name,
         room: formatRoom(meeting),
+        buildingCode: meeting.building.buildingCode.trim(),
         day: meeting.start.day,
         startMillis: meeting.start.millisofday,
         endMillis: meeting.end.millisofday,
