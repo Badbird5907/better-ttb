@@ -56,6 +56,7 @@ import {
 } from "@/lib/timetable";
 import {
   getSectionAvailability,
+  isSectionWaitlisted,
   selectedOthersFor,
   type SectionAvailability,
 } from "@/lib/section-status";
@@ -1592,7 +1593,7 @@ function SectionCombobox({
                     · {selectedSection.enrolmentInd}
                   </span>
                 )}
-                {selectedSection.waitlistInd === "Y" && (
+                {isSectionWaitlisted(selectedSection) && (
                   <span className="ml-1.5 font-medium text-amber-700 dark:text-amber-400">
                     · WL
                   </span>
@@ -1670,7 +1671,7 @@ function SectionCombobox({
                             · {section.enrolmentInd}
                           </span>
                         )}
-                        {section.waitlistInd === "Y" && (
+                        {isSectionWaitlisted(section) && (
                           <span className="ml-1.5 font-medium text-amber-700 dark:text-amber-400">
                             · WL
                           </span>

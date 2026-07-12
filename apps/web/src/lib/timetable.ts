@@ -9,6 +9,7 @@ import type {
 } from "@better-ttb/shared";
 import { meetingTimesOverlap, parseSessionCode, sectionAllowedByLinkage } from "@better-ttb/shared";
 
+import { isSectionWaitlisted } from "@/lib/section-status";
 import type { PinnedCourse, Plan } from "@/stores/plan";
 
 export type Term = "fall" | "winter";
@@ -221,7 +222,7 @@ export function buildTermBlocks(
         conflict: conflictSectionKeys.has(selectedSection.key),
         disallowed: disallowedSectionKeys.has(selectedSection.key),
         preview: options.preview ?? false,
-        waitlisted: selectedSection.section.waitlistInd === "Y",
+        waitlisted: isSectionWaitlisted(selectedSection.section),
       });
     });
   });
