@@ -4,8 +4,8 @@ import { formatDay, millisofdayToHHMM } from "@better-ttb/shared";
 import { Footprints, Layers, MapPin, TriangleAlert } from "lucide-react";
 import * as React from "react";
 
-import { AppNav, MobileNav } from "@/components/app-nav";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AppHeader } from "@/components/app-header";
+import { MobileNav } from "@/components/app-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -112,7 +112,7 @@ function MapRoute() {
 
   return (
     <main className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
-      <MapHeader />
+      <AppHeader brandIcon={Layers} />
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
         <Tabs value={term} onValueChange={(value) => setTerm(value as Term)}>
@@ -318,27 +318,6 @@ function TransferRow({
         )}
       </div>
     </div>
-  );
-}
-
-function MapHeader() {
-  return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-4 px-4">
-      <div className="flex min-w-0 items-center gap-4">
-        <div className="flex items-center gap-2">
-          <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Layers className="size-4" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold">Better TTB</h1>
-            <p className="hidden truncate text-xs text-muted-foreground sm:block">By Evan Yu</p>
-          </div>
-        </div>
-
-        <AppNav />
-      </div>
-      <ThemeToggle />
-    </header>
   );
 }
 

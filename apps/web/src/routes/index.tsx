@@ -15,27 +15,22 @@ import { formatSessionLabel, parseSessionCode } from "@better-ttb/shared";
 import {
   Check,
   ChevronsUpDown,
-  Copy,
   Filter,
   Layers,
-  MoreHorizontal,
-  Pencil,
   Pin,
   PinOff,
-  Plus,
   RefreshCw,
-  Trash2,
   TriangleAlert,
   X,
 } from "lucide-react";
 import * as React from "react";
 
-import { AppNav, MobileNav } from "@/components/app-nav";
+import { AppHeader } from "@/components/app-header";
+import { MobileNav } from "@/components/app-nav";
 import {
   extractLiveCourse,
   mergeLiveEnrolment,
 } from "@/lib/live-course";
-import { ThemeToggle } from "@/components/theme-toggle";
 import {
   DAY_FILTERS,
   DEFAULT_SEARCH_FILTERS,
@@ -105,12 +100,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export interface HomeSearch {
   course?: string;
@@ -149,16 +139,11 @@ function Home() {
   const loadCatalog = useCatalogStore((state) => state.loadCatalog);
   const plans = usePlanStore((state) => state.plans);
   const activePlanId = usePlanStore((state) => state.activePlanId);
-  const setActivePlan = usePlanStore((state) => state.setActivePlan);
   const setPlanSessions = usePlanStore((state) => state.setPlanSessions);
   const pinCourse = usePlanStore((state) => state.pin);
   const unpinCourse = usePlanStore((state) => state.unpin);
   const choose = usePlanStore((state) => state.choose);
   const clearChoice = usePlanStore((state) => state.clearChoice);
-  const renamePlan = usePlanStore((state) => state.renamePlan);
-  const newPlan = usePlanStore((state) => state.newPlan);
-  const deletePlan = usePlanStore((state) => state.deletePlan);
-  const duplicatePlan = usePlanStore((state) => state.duplicatePlan);
   const activePlan = React.useMemo(
     () => activePlanFromState({ plans, activePlanId }),
     [activePlanId, plans],
@@ -444,26 +429,25 @@ function Home() {
   return (
     <TooltipProvider>
       <main className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
-        <BuilderHeader
-          activePlan={activePlan}
-          plans={plans}
-          sessionOptions={sessionOptions}
-          onSessionChange={setPlanSessions}
-          onSetActivePlan={setActivePlan}
-          onNewPlan={() => newPlan(activePlan.sessions)}
-          onRenamePlan={() => {
-            const nextName = window.prompt("Rename plan", activePlan.name);
-
-            if (nextName !== null) {
-              renamePlan(activePlan.id, nextName);
-            }
-          }}
-          onDuplicatePlan={() => duplicatePlan(activePlan.id)}
-          onDeletePlan={() => {
-            if (plans.length > 1 && window.confirm(`Delete ${activePlan.name}?`)) {
-              deletePlan(activePlan.id);
-            }
-          }}
+        <AppHeader
+          brandIcon={Layers}
+          sessionSelector={
+            <Select
+              value={activePlan.sessions.join(",")}
+              onValueChange={(value) => setPlanSessions(value.split(","))}
+            >
+              <SelectTrigger className="hidden w-[210px] md:flex">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {sessionOptions.map((sessions) => (
+                  <SelectItem key={sessions.join(",")} value={sessions.join(",")}>
+                    {formatSessionsLabel(sessions)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
         />
 
         <div className="border-t p-1 lg:hidden">
@@ -593,188 +577,6 @@ function Home() {
         <MobileNav />
       </main>
     </TooltipProvider>
-  );
-}
-
-function BuilderHeader({
-  activePlan,
-  plans,
-  sessionOptions,
-  onSessionChange,
-  onSetActivePlan,
-  onNewPlan,
-  onRenamePlan,
-  onDuplicatePlan,
-  onDeletePlan,
-}: {
-  activePlan: Plan;
-  plans: Plan[];
-  sessionOptions: string[][];
-  onSessionChange: (sessions: string[]) => void;
-  onSetActivePlan: (planId: string) => void;
-  onNewPlan: () => void;
-  onRenamePlan: () => void;
-  onDuplicatePlan: () => void;
-  onDeletePlan: () => void;
-}) {
-  return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-4 px-4">
-      <div className="flex min-w-0 items-center gap-4">
-        <div className="flex items-center gap-2">
-          <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Layers className="size-4" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold">Better TTB</h1>
-            <p className="hidden truncate text-xs text-muted-foreground sm:block">
-              By Evan Yu
-            </p>
-          </div>
-        </div>
-
-        <AppNav />
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2">
-        <Select
-          value={activePlan.sessions.join(",")}
-          onValueChange={(value) => onSessionChange(value.split(","))}
-        >
-          <SelectTrigger className="hidden w-[210px] md:flex">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {sessionOptions.map((sessions) => (
-              <SelectItem key={sessions.join(",")} value={sessions.join(",")}>
-                {formatSessionsLabel(sessions)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select value={activePlan.id} onValueChange={onSetActivePlan}>
-          <SelectTrigger className="w-[110px] min-w-0 sm:w-[160px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {plans.map((plan) => (
-              <SelectItem key={plan.id} value={plan.id}>
-                {plan.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <HeaderIconButton
-          label="New plan"
-          onClick={onNewPlan}
-          className="hidden sm:inline-flex"
-        >
-          <Plus />
-        </HeaderIconButton>
-        <HeaderIconButton
-          label="Rename plan"
-          onClick={onRenamePlan}
-          className="hidden sm:inline-flex"
-        >
-          <Pencil />
-        </HeaderIconButton>
-        <HeaderIconButton
-          label="Duplicate plan"
-          onClick={onDuplicatePlan}
-          className="hidden sm:inline-flex"
-        >
-          <Copy />
-        </HeaderIconButton>
-        <HeaderIconButton
-          label="Delete plan"
-          onClick={onDeletePlan}
-          disabled={plans.length <= 1}
-          className="hidden sm:inline-flex"
-        >
-          <Trash2 />
-        </HeaderIconButton>
-
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="sm:hidden"
-            >
-              <MoreHorizontal />
-              <span className="sr-only">Plan actions</span>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-48 p-1.5">
-            <div className="space-y-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start"
-                onClick={onNewPlan}
-              >
-                <Plus />
-                New plan
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start"
-                onClick={onRenamePlan}
-              >
-                <Pencil />
-                Rename plan
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start"
-                onClick={onDuplicatePlan}
-              >
-                <Copy />
-                Duplicate plan
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start"
-                onClick={onDeletePlan}
-                disabled={plans.length <= 1}
-              >
-                <Trash2 />
-                Delete plan
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
-
-        <ThemeToggle />
-      </div>
-    </header>
-  );
-}
-
-function HeaderIconButton({
-  label,
-  children,
-  ...props
-}: React.ComponentProps<typeof Button> & { label: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button type="button" variant="ghost" size="icon-sm" {...props}>
-          {children}
-          <span className="sr-only">{label}</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
   );
 }
 
