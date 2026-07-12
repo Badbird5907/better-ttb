@@ -93,9 +93,11 @@ export function groupAlternativesBySlot(
 
 export function linkageImpact(
   course: Course,
+  courseKey: string,
   chosen: Record<string, string | null>,
   teachMethod: TeachMethod,
   candidate: Section,
+  planSelectedSections: readonly PlanSelectedSection[],
 ): LinkageImpact {
   const selectedOthers = selectedOthersFor(course, chosen, teachMethod);
   const clears: TeachMethod[] = [];
@@ -116,16 +118,69 @@ export function linkageImpact(
         section.openLimitInd !== "C" &&
         sectionsAllowedTogether(candidate, section),
     );
+    const replacement = bestReplacementSection(
+      course,
+      courseKey,
+      candidate,
+      allowedAlternatives,
+      planSelectedSections,
+    );
 
-    if (allowedAlternatives.length === 1) {
+    if (replacement) {
       autoPicks.push({
         teachMethod: affectedTeachMethod,
-        sectionName: allowedAlternatives[0]!.name,
+        sectionName: replacement.name,
       });
     }
   }
 
   return { clears, autoPicks };
+}
+
+/**
+ * Picks the replacement to auto-enrol when a linked section gets cleared:
+ * prefer sections that don't conflict with the rest of the plan (including the
+ * section being switched to), then non-waitlisted ones, then name order.
+ */
+function bestReplacementSection(
+  course: Course,
+  courseKey: string,
+  candidate: Section,
+  alternatives: readonly Section[],
+  planSelectedSections: readonly PlanSelectedSection[],
+): Section | null {
+  if (alternatives.length === 0) {
+    return null;
+  }
+
+  // The plan still holds this course's OLD sections; compare against the other
+  // courses plus the switch candidate under a distinct key so it isn't skipped.
+  const hypotheticalPlan: PlanSelectedSection[] = [
+    ...planSelectedSections.filter((entry) => entry.courseKey !== courseKey),
+    {
+      courseKey: `${courseKey}#switch-candidate`,
+      courseCode: course.code,
+      sectionCode: course.sectionCode,
+      teachMethod: candidate.teachMethod,
+      section: candidate,
+    },
+  ];
+
+  function rank(section: Section): number {
+    const conflicts =
+      sectionConflictsWithPlan(
+        section,
+        course.sectionCode,
+        courseKey,
+        hypotheticalPlan,
+      ) !== null;
+
+    return (conflicts ? 2 : 0) + (isSectionWaitlisted(section) ? 1 : 0);
+  }
+
+  return [...alternatives].sort(
+    (left, right) => rank(left) - rank(right) || left.name.localeCompare(right.name),
+  )[0]!;
 }
 
 export function walkFromPreviousBlock(
@@ -198,7 +253,14 @@ export function buildAlternativeDraftBlocks(
     const invalidates = new Set<string>();
 
     for (const option of group.options) {
-      const impact = linkageImpact(course, chosen, teachMethod, option);
+      const impact = linkageImpact(
+        course,
+        courseKey,
+        chosen,
+        teachMethod,
+        option,
+        planSelectedSections,
+      );
 
       for (const clearTeachMethod of impact.clears) {
         const sectionName = chosen[clearTeachMethod];

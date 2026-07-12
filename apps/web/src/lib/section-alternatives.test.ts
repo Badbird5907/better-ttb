@@ -78,9 +78,11 @@ describe("linkageImpact", () => {
 
     const impact = linkageImpact(
       course,
+      "CSC207H1:F",
       { LEC: "LEC0101", TUT: "TUT0101" },
       "LEC",
       course.sections[1]!,
+      [],
     );
 
     expect(impact).toEqual({
@@ -89,23 +91,67 @@ describe("linkageImpact", () => {
     });
   });
 
-  it("does not auto-pick when multiple compatible replacements remain", () => {
+  it("auto-picks the best replacement when multiple compatible ones remain", () => {
     const course = makeCourse([
       section("LEC", "LEC0101"),
       section("LEC", "LEC0201"),
       section("TUT", "TUT0101", { linkedMeetingSections: [linked("LEC", "0101")] }),
-      section("TUT", "TUT0201", { linkedMeetingSections: [linked("LEC", "0201")] }),
+      // Name order would pick TUT0201, but it is waitlisted; TUT0202 wins.
+      section("TUT", "TUT0201", {
+        linkedMeetingSections: [linked("LEC", "0201")],
+        waitlistInd: "Y",
+        currentEnrolment: 30,
+        maxEnrolment: 30,
+      }),
       section("TUT", "TUT0202", { linkedMeetingSections: [linked("LEC", "0201")] }),
     ]);
 
     const impact = linkageImpact(
       course,
+      "CSC207H1:F",
       { LEC: "LEC0101", TUT: "TUT0101" },
       "LEC",
       course.sections[1]!,
+      [],
     );
 
-    expect(impact).toEqual({ clears: ["TUT"], autoPicks: [] });
+    expect(impact).toEqual({
+      clears: ["TUT"],
+      autoPicks: [{ teachMethod: "TUT", sectionName: "TUT0202" }],
+    });
+  });
+
+  it("prefers a replacement that does not conflict with the rest of the plan or the new section", () => {
+    const course = makeCourse([
+      section("LEC", "LEC0101"),
+      section("LEC", "LEC0201", {
+        meetingTimes: [meeting(1, "10:00", "11:00", "BA")],
+      }),
+      section("TUT", "TUT0101", { linkedMeetingSections: [linked("LEC", "0101")] }),
+      // Name order would pick TUT0201, but it overlaps the new LEC0201.
+      section("TUT", "TUT0201", {
+        linkedMeetingSections: [linked("LEC", "0201")],
+        meetingTimes: [meeting(1, "10:00", "11:00", "MP")],
+      }),
+      section("TUT", "TUT0202", {
+        linkedMeetingSections: [linked("LEC", "0201")],
+        meetingTimes: [meeting(1, "11:00", "12:00", "MP")],
+      }),
+    ]);
+
+    const impact = linkageImpact(
+      course,
+      "CSC207H1:F",
+      { LEC: "LEC0101", TUT: "TUT0101" },
+      "LEC",
+      course.sections[1]!,
+      [],
+    );
+
+    expect(impact).toEqual({
+      clears: ["TUT"],
+      autoPicks: [{ teachMethod: "TUT", sectionName: "TUT0202" }],
+    });
   });
 });
 

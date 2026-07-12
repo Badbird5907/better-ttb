@@ -129,6 +129,7 @@ import {
   selectedSectionsFromCandidate,
   selectedSectionsFromPlan,
   totalWalkMinutes,
+  type PlanSelectedSection,
   type SelectedTimetableSection,
   type Term,
   type TimetableBlock,
@@ -552,9 +553,11 @@ function TimetableRoute() {
 
     const impact = linkageImpact(
       altTargetCourse,
+      altTarget.courseKey,
       altTargetPinned.chosen,
       altTarget.teachMethod,
       candidate,
+      planSelectedSections,
     );
     const baseSelection = {
       courseCode: altTargetCourse.code,
@@ -1045,6 +1048,7 @@ function TimetableRoute() {
           course={altTargetCourse}
           chosen={altTargetPinned?.chosen ?? {}}
           target={altTarget}
+          planSelectedSections={planSelectedSections}
           onChoose={commitSwitch}
           onOpenChange={(open) => {
             if (!open) {
@@ -1709,6 +1713,7 @@ function SlotPickerDialog({
   course,
   chosen,
   target,
+  planSelectedSections,
   onChoose,
   onOpenChange,
 }: {
@@ -1716,6 +1721,7 @@ function SlotPickerDialog({
   course: Course | null;
   chosen: Record<string, string | null>;
   target: AltTarget | null;
+  planSelectedSections: readonly PlanSelectedSection[];
   onChoose: (sectionName: string) => void;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -1733,7 +1739,14 @@ function SlotPickerDialog({
             const walk = slotPicker.walkByName.get(section.name) ?? null;
             const impactNote =
               course && target
-                ? describeLinkageImpact(course, chosen, target.teachMethod, section)
+                ? describeLinkageImpact(
+                    course,
+                    target.courseKey,
+                    chosen,
+                    target.teachMethod,
+                    section,
+                    planSelectedSections,
+                  )
                 : null;
 
             return (
@@ -1829,11 +1842,20 @@ function useCoarsePointer(): boolean {
 
 function describeLinkageImpact(
   course: Course,
+  courseKey: string,
   chosen: Record<string, string | null>,
   teachMethod: TeachMethod,
   candidate: Section,
+  planSelectedSections: readonly PlanSelectedSection[],
 ): string | null {
-  const impact = linkageImpact(course, chosen, teachMethod, candidate);
+  const impact = linkageImpact(
+    course,
+    courseKey,
+    chosen,
+    teachMethod,
+    candidate,
+    planSelectedSections,
+  );
 
   if (impact.clears.length === 0) {
     return null;
