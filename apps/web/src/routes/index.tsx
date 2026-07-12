@@ -223,26 +223,6 @@ function Home() {
     };
   }, []);
 
-  React.useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (
-        event.key !== "/" ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey ||
-        isTextInput(event.target)
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      document.querySelector<HTMLInputElement>("[data-course-search]")?.focus();
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
   const searchIndex = React.useMemo(
     () => (catalog ? createCourseSearch(catalog.courses) : null),
     [catalog],
@@ -432,14 +412,6 @@ function Home() {
     });
   }
 
-  function togglePinCourse(course: Course) {
-    if (isCoursePinned(activePlan, course.code, course.sectionCode)) {
-      unpinCourse(course.code, course.sectionCode);
-    } else {
-      pinCourse(course.code, course.sectionCode);
-    }
-  }
-
   function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (results.length === 0) {
       return;
@@ -467,12 +439,6 @@ function Home() {
       event.stopPropagation();
       setSelectedCourseKey(courseKey(activeCourse));
       return;
-    }
-
-    if ((event.key === "p" || event.key === "P") && activeCourse) {
-      event.preventDefault();
-      event.stopPropagation();
-      togglePinCourse(activeCourse);
     }
   }
 
@@ -1775,15 +1741,6 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   }, [delayMs, value]);
 
   return debounced;
-}
-
-function isTextInput(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  );
 }
 
 function isCoursePinned(
