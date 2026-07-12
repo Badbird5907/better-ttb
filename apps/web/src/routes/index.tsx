@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { usePostHog } from "@posthog/react";
 import { detectConflicts } from "@better-ttb/generator";
 import type {
   Course,
@@ -139,6 +140,7 @@ const buildingByCode = new Map(
 );
 
 function Home() {
+  const posthog = usePostHog();
   const status = useCatalogStore((state) => state.status);
   const catalog = useCatalogStore((state) => state.catalog);
   const error = useCatalogStore((state) => state.error);
@@ -488,10 +490,20 @@ function Home() {
                 activeIndex={activeIndex}
                 onRetry={() => void loadCatalog(activePlan.sessions)}
                 onOpenCourse={(course) => setSelectedCourseKey(courseKey(course))}
-                onPinCourse={(course) => pinCourse(course.code, course.sectionCode)}
-                onUnpinCourse={(course) =>
-                  unpinCourse(course.code, course.sectionCode)
-                }
+                onPinCourse={(course) => {
+                  pinCourse(course.code, course.sectionCode);
+                  posthog.capture("course_pinned", {
+                    course_code: course.code,
+                    section_code: course.sectionCode,
+                  });
+                }}
+                onUnpinCourse={(course) => {
+                  unpinCourse(course.code, course.sectionCode);
+                  posthog.capture("course_unpinned", {
+                    course_code: course.code,
+                    section_code: course.sectionCode,
+                  });
+                }}
               />
             </section>
 

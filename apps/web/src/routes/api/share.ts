@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
 
 import { bindings } from "@/server/env";
+import { getPostHogClient } from "@/utils/posthog-server";
 
 const MAX_SHARE_BYTES = 64 * 1024;
 const SHARE_TTL_SECONDS = 180 * 24 * 60 * 60;
@@ -28,6 +29,21 @@ export const Route = createFileRoute("/api/share")({
         await bindings.KV.put(`share:${id}`, JSON.stringify(parsed.plan), {
           expirationTtl: SHARE_TTL_SECONDS,
         });
+
+        const sessionId = request.headers.get("X-PostHog-Session-Id");
+        const distinctId = request.headers.get("X-PostHog-Distinct-Id");
+        if (distinctId) {
+          const posthog = getPostHogClient();
+          posthog.capture({
+            distinctId,
+            event: "share_created",
+            properties: {
+              $session_id: sessionId || undefined,
+              share_id: id,
+            },
+          });
+          await posthog.flush();
+        }
 
         return Response.json({ id });
       },

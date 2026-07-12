@@ -1,4 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { usePostHog } from "@posthog/react";
 import type {
   CandidateTimetable,
   CourseInput,
@@ -157,6 +158,7 @@ const buildingCoordinates = Object.fromEntries(
 );
 
 function TimetableRoute() {
+  const posthog = usePostHog();
   const status = useCatalogStore((state) => state.status);
   const catalog = useCatalogStore((state) => state.catalog);
   const catalogError = useCatalogStore((state) => state.error);
@@ -314,6 +316,11 @@ function TimetableRoute() {
     setGenerationResult(null);
     setPreviewCandidate(null);
 
+    posthog.capture("timetable_generated", {
+      course_count: courses.length,
+      rule_count: request.config.rules.length,
+    });
+
     worker.addEventListener("message", (event: MessageEvent<GeneratorWorkerMessage>) => {
       if (event.data.id !== request.id) {
         return;
@@ -346,6 +353,10 @@ function TimetableRoute() {
       return;
     }
 
+    posthog.capture("generated_candidate_applied", {
+      candidate_score: previewCandidate.score,
+    });
+
     applyCandidateSelections(activePlan, coursesByKey, previewCandidate).forEach((selection) => {
       choose(
         selection.courseCode,
@@ -364,7 +375,11 @@ function TimetableRoute() {
     try {
       const response = await fetch("/api/share", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-PostHog-Session-Id": posthog.get_session_id() ?? "",
+          "X-PostHog-Distinct-Id": posthog.get_distinct_id() ?? "",
+        },
         body: JSON.stringify({ plan: activePlan }),
       });
 
@@ -381,6 +396,9 @@ function TimetableRoute() {
       const url = `${window.location.origin}/p/${body.id}`;
       setShareUrl(url);
       setShareOpen(true);
+      posthog.capture("plan_shared", {
+        pinned_course_count: activePlan.pinned.length,
+      });
     } catch (error) {
       setShareError(error instanceof Error ? error.message : String(error));
       setShareOpen(true);
@@ -390,6 +408,9 @@ function TimetableRoute() {
   }
 
   function exportPlanJson() {
+    posthog.capture("plan_exported_json", {
+      pinned_course_count: activePlan.pinned.length,
+    });
     downloadText(
       `${activePlan.name.replace(/\W+/g, "-").toLowerCase()}-plan.json`,
       "application/json",
@@ -406,9 +427,15 @@ function TimetableRoute() {
     }
 
     importPlan(plan, `${plan.name} Import`);
+    posthog.capture("plan_imported", {
+      pinned_course_count: plan.pinned.length,
+    });
   }
 
   function exportIcs() {
+    posthog.capture("plan_exported_ics", {
+      pinned_course_count: activePlan.pinned.length,
+    });
     const selectedSections = selectedSectionsFromPlan(activePlan, coursesByKey);
     const ics = buildIcsCalendar({
       calendarName: activePlan.name,

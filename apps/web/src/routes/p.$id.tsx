@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { usePostHog } from "@posthog/react";
 import type { Course } from "@better-ttb/shared";
 import { Import, Layers } from "lucide-react";
 import * as React from "react";
@@ -25,6 +26,7 @@ export const Route = createFileRoute("/p/$id")({
 });
 
 function SharedPlanRoute() {
+  const posthog = usePostHog();
   const { id } = Route.useParams();
   const navigate = useNavigate();
   const status = useCatalogStore((state) => state.status);
@@ -106,6 +108,10 @@ function SharedPlanRoute() {
     }
 
     importPlan(plan, `${plan.name} Import`);
+    posthog.capture("shared_plan_imported", {
+      share_id: id,
+      pinned_course_count: plan.pinned.length,
+    });
     void navigate({ to: "/timetable" });
   }
 

@@ -1,0 +1,52 @@
+[
+  {
+    "event_name": "course_pinned",
+    "event_description": "User pins a course to their active plan from the search results.",
+    "file": "apps/web/src/routes/index.tsx"
+  },
+  {
+    "event_name": "course_unpinned",
+    "event_description": "User unpins a course from their active plan.",
+    "file": "apps/web/src/routes/index.tsx"
+  },
+  {
+    "event_name": "timetable_generated",
+    "event_description": "User runs the auto-generator to find candidate timetables.",
+    "file": "apps/web/src/routes/timetable.tsx"
+  },
+  {
+    "event_name": "generated_candidate_applied",
+    "event_description": "User applies a generated timetable candidate to their plan.",
+    "file": "apps/web/src/routes/timetable.tsx"
+  },
+  {
+    "event_name": "plan_shared",
+    "event_description": "User successfully shares their plan and receives a share URL.",
+    "file": "apps/web/src/routes/timetable.tsx"
+  },
+  {
+    "event_name": "plan_exported_ics",
+    "event_description": "User exports their timetable as an ICS calendar file.",
+    "file": "apps/web/src/routes/timetable.tsx"
+  },
+  {
+    "event_name": "plan_exported_json",
+    "event_description": "User exports their plan as a JSON backup file.",
+    "file": "apps/web/src/routes/timetable.tsx"
+  },
+  {
+    "event_name": "plan_imported",
+    "event_description": "User imports a plan from a JSON file.",
+    "file": "apps/web/src/routes/timetable.tsx"
+  },
+  {
+    "event_name": "shared_plan_imported",
+    "event_description": "User imports a shared plan into their own plans from the shared view.",
+    "file": "apps/web/src/routes/p.$id.tsx"
+  },
+  {
+    "event_name": "share_created",
+    "event_description": "Server successfully creates a shareable plan link and stores it in KV.",
+    "file": "apps/web/src/routes/api/share.ts"
+  }
+]
