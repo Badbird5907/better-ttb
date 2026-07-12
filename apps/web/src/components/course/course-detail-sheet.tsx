@@ -51,6 +51,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ProfRating } from "@/components/prof-rating";
 import { MiniPrereqTree } from "./mini-prereq-tree";
 import { RequisiteView } from "./requisite-view";
 
@@ -643,7 +644,9 @@ function SectionRow({
           <span className="text-muted-foreground">TBA</span>
         )}
       </td>
-      <td className="px-3 py-3 align-top">{formatInstructors(section)}</td>
+      <td className="px-3 py-3 align-top">
+        <SectionInstructors section={section} />
+      </td>
       <td className="px-3 py-3 align-top">
         <div className="space-y-1">
           <span>
@@ -777,14 +780,31 @@ export function formatRoom(meeting: MeetingTime): string {
   return `${number}${suffix}`.trim();
 }
 
-function formatInstructors(section: Section): string {
-  if (section.instructors.length === 0) {
-    return "TBA";
+function SectionInstructors({ section }: { section: Section }) {
+  const instructors = section.instructors.filter(
+    (instructor) => instructor.firstName || instructor.lastName,
+  );
+
+  if (instructors.length === 0) {
+    return <span className="text-muted-foreground">TBA</span>;
   }
 
-  return section.instructors
-    .map((instructor) => `${instructor.firstName} ${instructor.lastName}`)
-    .join(", ");
+  return (
+    <>
+      {instructors.map((instructor, index) => (
+        <React.Fragment key={`${instructor.firstName}-${instructor.lastName}-${index}`}>
+          {index > 0 && ", "}
+          <span className="whitespace-nowrap">
+            {`${instructor.firstName} ${instructor.lastName}`.trim()}
+            <ProfRating
+              firstName={instructor.firstName}
+              lastName={instructor.lastName}
+            />
+          </span>
+        </React.Fragment>
+      ))}
+    </>
+  );
 }
 
 function getSectionDeliveryModes(section: Section): DeliveryMode[] {
