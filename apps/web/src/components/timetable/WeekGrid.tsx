@@ -297,7 +297,7 @@ export function WeekGrid({
                       !block.conflict && block.disallowed && "opacity-60 saturate-50 ring-1 ring-slate-500",
                       block.preview && "border-dashed",
                       block.draft &&
-                        "cursor-pointer border-2 border-dashed border-white/80 opacity-80 hover:opacity-100",
+                        "cursor-pointer border-2 border-dashed border-white/80 p-1 opacity-80 hover:opacity-100",
                       highlighted && "ring-2 ring-white/70",
                       pulsed && "animate-pulse border-red-500 ring-2 ring-red-500",
                       faded && "opacity-35",
@@ -326,6 +326,13 @@ export function WeekGrid({
                           : "rgba(255,255,255,0.55)",
                       touchAction: "manipulation",
                     }}
+                    title={
+                      block.draft
+                        ? optionCount > 1
+                          ? `${block.courseCode}: ${(block.draftOptions ?? []).join(", ")}`
+                          : `${block.courseCode} ${block.sectionName} · ${block.room}`
+                        : undefined
+                    }
                     onClick={(event) => {
                       if (swallowClickRef.current) {
                         event.preventDefault();
@@ -385,6 +392,18 @@ export function WeekGrid({
                       <span className="block truncate font-semibold leading-none">
                         {block.courseCode.replace(/[A-Z]1$/, "")}
                       </span>
+                    ) : block.draft ? (
+                      // Drafts keep to two centered lines so short rows never
+                      // clip text; the room lives in the title tooltip and the
+                      // slot picker instead.
+                      <span className="flex h-full min-h-0 flex-col justify-center gap-0.5">
+                        <span className="truncate text-xs font-semibold leading-tight">
+                          {block.courseCode}
+                        </span>
+                        <span className="truncate text-[11px] leading-tight">
+                          {optionCount > 1 ? `+${optionCount} options` : block.sectionName}
+                        </span>
+                      </span>
                     ) : (
                       <span className="flex h-full min-h-0 flex-col gap-0.5">
                         <span className="truncate text-xs font-semibold leading-tight">
@@ -396,11 +415,6 @@ export function WeekGrid({
                         <span className="truncate text-[10px] leading-tight text-white/85">
                           {block.room}
                         </span>
-                        {block.draft && optionCount > 1 && (
-                          <span className="mt-auto text-center text-[10px] font-semibold leading-tight text-white">
-                            +{optionCount} options
-                          </span>
-                        )}
                       </span>
                     )}
                     {!compact && block.waitlisted && (
