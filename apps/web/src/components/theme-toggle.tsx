@@ -116,6 +116,7 @@ export function ThemeToggle() {
             type="button"
             variant="ghost"
             size="icon-sm"
+            className="hidden sm:inline-flex"
             onClick={() => setTheme(nextTheme)}
           >
             {theme === "system" ? (
