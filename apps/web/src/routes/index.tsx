@@ -1277,6 +1277,10 @@ function PlanPanel({
     () => computeCreditTotals(plan, coursesByKey),
     [coursesByKey, plan],
   );
+  const pinnedCourses = React.useMemo(
+    () => [...plan.pinned].sort(comparePinnedCoursesBySession),
+    [plan.pinned],
+  );
 
   return (
     <aside className={cn("min-h-0 flex-col bg-background", className)}>
@@ -1308,7 +1312,7 @@ function PlanPanel({
           </div>
         ) : (
           <div className="space-y-3">
-            {plan.pinned.map((pinned) => (
+            {pinnedCourses.map((pinned) => (
               <PinnedCourseCard
                 key={pinnedKey(pinned)}
                 pinned={pinned}
@@ -1788,6 +1792,22 @@ function resolveKey(
 
 function pinnedKey(pinned: PinnedCourse): string {
   return `${pinned.courseCode}:${pinned.sectionCode}`;
+}
+
+function comparePinnedCoursesBySession(left: PinnedCourse, right: PinnedCourse): number {
+  return pinnedSessionRank(left.sectionCode) - pinnedSessionRank(right.sectionCode);
+}
+
+function pinnedSessionRank(sectionCode: SectionCode): number {
+  if (sectionCode === "F") {
+    return 0;
+  }
+
+  if (sectionCode === "S") {
+    return 1;
+  }
+
+  return 2;
 }
 
 function selectedConflictKey(pinned: PinnedCourse, section: Section): string {
