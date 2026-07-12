@@ -17,6 +17,7 @@ import {
   FileJson,
   Layers,
   Plus,
+  RotateCcw,
   Share2,
   Trash2,
   TriangleAlert,
@@ -170,6 +171,7 @@ function TimetableRoute() {
   const setActivePlan = usePlanStore((state) => state.setActivePlan);
   const newPlan = usePlanStore((state) => state.newPlan);
   const choose = usePlanStore((state) => state.choose);
+  const resetAllChoices = usePlanStore((state) => state.resetAllChoices);
   const importPlan = usePlanStore((state) => state.importPlan);
   const updatePlanPrefs = usePlanStore((state) => state.updatePlanPrefs);
   const activePlan = React.useMemo(
@@ -469,7 +471,7 @@ function TimetableRoute() {
 
   return (
     <TooltipProvider>
-      <main className="flex h-screen min-h-[720px] flex-col bg-background text-foreground">
+      <main className="flex h-dvh flex-col bg-background text-foreground">
         <TimetableHeader
           activePlan={activePlan}
           plans={plans}
@@ -620,6 +622,7 @@ function TimetableRoute() {
               sortedCandidates={sortedCandidates}
               previewKey={previewKey}
               onClose={() => setPanelOpen(false)}
+              onResetAll={resetAllChoices}
               onRun={runGenerator}
               onRulesChange={setRules}
               onToggleBlockout={toggleBlockoutMode}
@@ -677,7 +680,11 @@ function TimetableRoute() {
                 sortedCandidates={sortedCandidates}
                 previewKey={previewKey}
                 renderLockedChoices={() => (
-                  <LockedChoicesHint activePlan={activePlan} courses={activeCourses} />
+                  <LockedChoicesHint
+                    activePlan={activePlan}
+                    courses={activeCourses}
+                    onResetAll={resetAllChoices}
+                  />
                 )}
                 renderRuleEditor={() => (
                   <RuleEditor rules={generatorPrefs.rules} onRulesChange={setRules} />
@@ -843,6 +850,7 @@ function GeneratePanel({
   sortedCandidates,
   previewKey,
   onClose,
+  onResetAll,
   onRun,
   onRulesChange,
   onToggleBlockout,
@@ -864,6 +872,7 @@ function GeneratePanel({
   sortedCandidates: CandidateTimetable[];
   previewKey: string | null;
   onClose: () => void;
+  onResetAll: () => void;
   onRun: () => void;
   onRulesChange: (rules: RuleConfig[]) => void;
   onToggleBlockout: () => void;
@@ -898,7 +907,11 @@ function GeneratePanel({
         sortedCandidates={sortedCandidates}
         previewKey={previewKey}
         renderLockedChoices={() => (
-          <LockedChoicesHint activePlan={activePlan} courses={courses} />
+          <LockedChoicesHint
+            activePlan={activePlan}
+            courses={courses}
+            onResetAll={onResetAll}
+          />
         )}
         renderRuleEditor={() => (
           <RuleEditor rules={rules} onRulesChange={onRulesChange} />
@@ -919,10 +932,13 @@ function GeneratePanel({
 function LockedChoicesHint({
   activePlan,
   courses,
+  onResetAll,
 }: {
   activePlan: Plan;
   courses: Course[];
+  onResetAll: () => void;
 }) {
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const lockedCourses = courses.flatMap((course) => {
     const key = courseKey(course);
     const pinned = activePlan.pinned.find((entry) => pinnedKey(entry) === key);
@@ -946,7 +962,20 @@ function LockedChoicesHint({
 
   return (
     <section className="space-y-2">
-      <h3 className="text-sm font-medium">Locked choices</h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-medium">Locked choices</h3>
+        {lockedCourses.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            onClick={() => setConfirmOpen(true)}
+          >
+            <RotateCcw />
+            Reset all to Auto
+          </Button>
+        )}
+      </div>
       <p className="text-xs text-muted-foreground">
         Sections you&apos;ve picked in your plan are kept fixed. Clear a section
         choice (set it to Auto) to let the generator optimize it.
@@ -965,6 +994,39 @@ function LockedChoicesHint({
           ))}
         </ul>
       )}
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset all courses to Auto?</DialogTitle>
+            <DialogDescription>
+              This clears every locked section choice across all{" "}
+              {lockedCourses.length} course{lockedCourses.length === 1 ? "" : "s"}{" "}
+              in this plan, letting the generator optimize each one. Your pinned
+              courses stay pinned.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                onResetAll();
+                setConfirmOpen(false);
+              }}
+            >
+              <RotateCcw />
+              Reset all to Auto
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

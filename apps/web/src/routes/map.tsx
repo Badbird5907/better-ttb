@@ -111,7 +111,7 @@ function MapRoute() {
   }
 
   return (
-    <main className="flex h-screen min-h-[640px] flex-col bg-background text-foreground">
+    <main className="flex h-dvh flex-col bg-background text-foreground">
       <MapHeader />
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">

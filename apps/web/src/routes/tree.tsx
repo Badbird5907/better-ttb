@@ -91,8 +91,8 @@ function TreeRoute() {
 
   const graph = useRequisiteGraph(catalog?.courses);
 
-  const [depth, setDepth] = React.useState<DepthOption>("2");
-  const [showCoreq, setShowCoreq] = React.useState(true);
+  const [depth, setDepth] = React.useState<DepthOption>("1");
+  const [showCoreq, setShowCoreq] = React.useState(false);
   const [showRecprep, setShowRecprep] = React.useState(false);
 
   const focusCode = search.course ?? null;
@@ -131,7 +131,7 @@ function TreeRoute() {
   }, [focusCode, focusFound, posthog]);
 
   return (
-    <main className="flex h-screen min-h-[640px] flex-col bg-background text-foreground">
+    <main className="flex h-dvh flex-col bg-background text-foreground">
       <TreeHeader />
 
       <div className="flex flex-wrap items-center gap-3 border-t px-4 py-3">

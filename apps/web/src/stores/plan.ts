@@ -55,6 +55,7 @@ interface PlanActions {
     sectionCode: SectionCode,
     teachMethod: TeachMethod,
   ) => void;
+  resetAllChoices: () => void;
   renamePlan: (planId: string, name: string) => void;
   newPlan: (sessions?: string[]) => void;
   deletePlan: (planId: string) => void;
@@ -108,6 +109,10 @@ export const usePlanStore = create<PlanStore>()(
           plans: updatePlan(state.plans, state.activePlanId, (plan) =>
             clearSectionChoice(plan, courseCode, sectionCode, teachMethod),
           ),
+        })),
+      resetAllChoices: () =>
+        set((state) => ({
+          plans: updatePlan(state.plans, state.activePlanId, resetPlanChoices),
         })),
       renamePlan: (planId, name) =>
         set((state) => ({
@@ -269,6 +274,17 @@ export function clearSectionChoice(
           }
         : pinned,
     ),
+  };
+}
+
+export function resetPlanChoices(plan: Plan): Plan {
+  if (plan.pinned.every((pinned) => Object.keys(pinned.chosen).length === 0)) {
+    return plan;
+  }
+
+  return {
+    ...plan,
+    pinned: plan.pinned.map((pinned) => ({ ...pinned, chosen: {} })),
   };
 }
 
