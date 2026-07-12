@@ -1,7 +1,23 @@
-import type { MeetingTime, Section, SectionCode, TeachMethod } from "@better-ttb/shared";
+import type {
+  Course,
+  LinkedMeetingSection,
+  MeetingTime,
+  Section,
+  SectionCode,
+  TeachMethod,
+} from "@better-ttb/shared";
 import { describe, expect, it } from "vitest";
 
-import { sectionConflictsWithPlan, type PlanSelectedSection } from "./timetable";
+import type { PinnedCourse } from "@/stores/plan";
+
+import {
+  buildTermBlocks,
+  detectLinkageViolationSectionKeys,
+  sectionConflictsWithPlan,
+  selectedSectionKey,
+  type PlanSelectedSection,
+  type SelectedTimetableSection,
+} from "./timetable";
 
 describe("sectionConflictsWithPlan", () => {
   it("does not flag an F section against an S section at the same time", () => {
@@ -48,6 +64,141 @@ describe("sectionConflictsWithPlan", () => {
     ).toBeNull();
   });
 });
+
+describe("detectLinkageViolationSectionKeys", () => {
+  it("flags nothing for a valid CSC207 lecture + tutorial pair", () => {
+    // TUT0201 links back to LEC0101 (the selected lecture) → the pair is valid.
+    const selected: PlanSelectedSection[] = [
+      linkedPlanSection("CSC207H1", "F", "LEC", "LEC0101"),
+      linkedPlanSection("CSC207H1", "F", "TUT", "TUT0201", [linkedRef("LEC", "0101")]),
+    ];
+
+    expect(detectLinkageViolationSectionKeys(selected)).toEqual(new Set());
+  });
+
+  it("flags a tutorial linked to a different lecture than the one selected", () => {
+    // TUT0301 links to LEC0201, but LEC0101 is selected. The tutorial's outgoing
+    // link doesn't match, and the lecture (null links) is still permitted, so
+    // only the tutorial key is flagged.
+    const selected: PlanSelectedSection[] = [
+      linkedPlanSection("CSC207H1", "F", "LEC", "LEC0101"),
+      linkedPlanSection("CSC207H1", "F", "TUT", "TUT0301", [linkedRef("LEC", "0201")]),
+    ];
+
+    expect(detectLinkageViolationSectionKeys(selected)).toEqual(
+      new Set([selectedSectionKey({ courseCode: "CSC207H1", sectionCode: "F" }, "TUT", "TUT0301")]),
+    );
+  });
+
+  it("also flags a lecture that declares an empty outgoing link array", () => {
+    // With linkedMeetingSections === [], the lecture is only permitted if the
+    // selected tutorial links to it. Here TUT0301 links to LEC0201, so both the
+    // lecture and the tutorial are flagged.
+    const selected: PlanSelectedSection[] = [
+      linkedPlanSection("CSC207H1", "F", "LEC", "LEC0101", []),
+      linkedPlanSection("CSC207H1", "F", "TUT", "TUT0301", [linkedRef("LEC", "0201")]),
+    ];
+
+    expect(detectLinkageViolationSectionKeys(selected)).toEqual(
+      new Set([
+        selectedSectionKey({ courseCode: "CSC207H1", sectionCode: "F" }, "LEC", "LEC0101"),
+        selectedSectionKey({ courseCode: "CSC207H1", sectionCode: "F" }, "TUT", "TUT0301"),
+      ]),
+    );
+  });
+
+  it("does not compare sections across different courses", () => {
+    // A tutorial with an unmatched link is nonetheless permitted here: it has no
+    // OTHER selected section within its own course to violate linkage against
+    // (the MAT lecture belongs to a different course and is never compared).
+    const selected: PlanSelectedSection[] = [
+      linkedPlanSection("CSC207H1", "F", "TUT", "TUT0301", [linkedRef("LEC", "0201")]),
+      linkedPlanSection("MAT137Y1", "Y", "LEC", "LEC0101"),
+    ];
+
+    expect(detectLinkageViolationSectionKeys(selected)).toEqual(new Set());
+  });
+});
+
+describe("buildTermBlocks", () => {
+  it("marks blocks whose section key is in the disallowed set", () => {
+    const lecture = timetableSection("CSC207H1", "F", "LEC", "LEC0101", [
+      meeting(1, "10:00", "11:00", "20269"),
+    ]);
+    const tutorial = timetableSection("CSC207H1", "F", "TUT", "TUT0301", [
+      meeting(2, "13:00", "14:00", "20269"),
+    ]);
+    const disallowedSectionKeys = new Set([tutorial.key]);
+
+    const { blocks } = buildTermBlocks([lecture, tutorial], "fall", { disallowedSectionKeys });
+
+    const lectureBlock = blocks.find((block) => block.sectionKey === lecture.key);
+    const tutorialBlock = blocks.find((block) => block.sectionKey === tutorial.key);
+
+    expect(lectureBlock?.disallowed).toBe(false);
+    expect(tutorialBlock?.disallowed).toBe(true);
+  });
+
+  it("defaults disallowed to false when no set is provided", () => {
+    const lecture = timetableSection("CSC207H1", "F", "LEC", "LEC0101", [
+      meeting(1, "10:00", "11:00", "20269"),
+    ]);
+
+    const { blocks } = buildTermBlocks([lecture], "fall");
+
+    expect(blocks.every((block) => block.disallowed === false)).toBe(true);
+  });
+});
+
+function linkedPlanSection(
+  courseCode: string,
+  sectionCode: SectionCode,
+  teachMethod: TeachMethod,
+  sectionName: string,
+  linkedMeetingSections: LinkedMeetingSection[] | null = null,
+): PlanSelectedSection {
+  return {
+    courseKey: `${courseCode}:${sectionCode}`,
+    courseCode,
+    sectionCode,
+    teachMethod,
+    section: {
+      ...section(teachMethod, sectionName),
+      linkedMeetingSections,
+    },
+  };
+}
+
+function timetableSection(
+  courseCode: string,
+  sectionCode: SectionCode,
+  teachMethod: TeachMethod,
+  sectionName: string,
+  meetings: MeetingTime[],
+): SelectedTimetableSection {
+  const pinned: PinnedCourse = { courseCode, sectionCode, chosen: {} };
+  const sec = section(teachMethod, sectionName, ...meetings);
+  const course = {
+    id: courseCode,
+    code: courseCode,
+    sectionCode,
+    name: courseCode,
+    sections: [sec],
+  } as unknown as Course;
+
+  return {
+    key: selectedSectionKey(pinned, teachMethod, sectionName),
+    courseKey: `${courseCode}:${sectionCode}`,
+    course,
+    pinned,
+    teachMethod,
+    section: sec,
+  };
+}
+
+function linkedRef(teachMethod: string, sectionNumber: string): LinkedMeetingSection {
+  return { teachMethod, sectionNumber, type: null };
+}
 
 function planSection(
   courseCode: string,

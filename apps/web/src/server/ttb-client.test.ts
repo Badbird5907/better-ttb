@@ -28,8 +28,9 @@ describe("ttb-client", () => {
       { fetchImpl },
     );
 
-    expect(result.courses).toHaveLength(1);
-    expect(result.courses[0]?.code).toBe("CSC108H1");
+    expect(result.pageableCourse.courses).toHaveLength(1);
+    expect(result.pageableCourse.courses[0]?.code).toBe("CSC108H1");
+    expect(result.divisionalEnrolmentIndicators).toEqual({});
     expect(requestBodies).toHaveLength(1);
     expect(requestBodies[0]).toMatchObject({
       courseCodeAndTitleProps: {
@@ -62,11 +63,77 @@ describe("ttb-client", () => {
       { fetchImpl },
     );
 
-    expect(result).toMatchObject({
+    expect(result.pageableCourse).toMatchObject({
       courses: [],
       total: 0,
       page: 5,
       pageSize: 20,
+    });
+    expect(result.divisionalEnrolmentIndicators).toEqual({});
+  });
+
+  it("parses divisionalEnrolmentIndicators from the response payload", async () => {
+    const response = {
+      payload: {
+        pageableCourse: csc108PageableResponse.payload?.pageableCourse,
+        divisionalEnrolmentIndicators: {
+          ARTSC: [
+            { code: "P", name: "Priority enrolment until July 22." },
+            { code: "E", name: "Open enrolment." },
+          ],
+        },
+      },
+      status: [],
+    };
+    const fetchImpl: typeof fetch = async () =>
+      new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    const result = await getPageableCourses(
+      buildPageableCoursesBody({ searchTerm: "CSC108", sessions: ["20269"] }),
+      { fetchImpl },
+    );
+
+    expect(result.divisionalEnrolmentIndicators).toEqual({
+      ARTSC: [
+        { code: "P", name: "Priority enrolment until July 22." },
+        { code: "E", name: "Open enrolment." },
+      ],
+    });
+  });
+
+  it("filters malformed enrolment-indicator entries and divisions", async () => {
+    const response = {
+      payload: {
+        pageableCourse: csc108PageableResponse.payload?.pageableCourse,
+        divisionalEnrolmentIndicators: {
+          ARTSC: [
+            { code: "P", name: "Priority enrolment." },
+            { code: 5, name: "bad code" },
+            { code: "E" },
+            "not-an-object",
+          ],
+          APSC: "not-an-array",
+          EMPTY: [{ name: "no code" }],
+        },
+      },
+      status: [],
+    };
+    const fetchImpl: typeof fetch = async () =>
+      new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    const result = await getPageableCourses(
+      buildPageableCoursesBody({ searchTerm: "CSC108", sessions: ["20269"] }),
+      { fetchImpl },
+    );
+
+    expect(result.divisionalEnrolmentIndicators).toEqual({
+      ARTSC: [{ code: "P", name: "Priority enrolment." }],
     });
   });
 

@@ -1,4 +1,4 @@
-import type { Course } from "@better-ttb/shared";
+import type { Course, DivisionalEnrolmentIndicators } from "@better-ttb/shared";
 
 import {
   buildPageableCoursesBody,
@@ -23,6 +23,7 @@ export interface ScrapeCursor {
   total: number | null;
   runId: number;
   startedAt: string;
+  divisionalEnrolmentIndicators?: DivisionalEnrolmentIndicators;
 }
 
 export interface ScrapeChunkResult {
@@ -37,6 +38,7 @@ export interface CatalogArtifact {
   scrapedAt: string;
   total: number;
   courses: Course[];
+  divisionalEnrolmentIndicators?: DivisionalEnrolmentIndicators;
 }
 
 export interface CatalogMeta {
@@ -121,14 +123,15 @@ export async function runScrapeChunk(
 
   while (pagesDone < maxPages) {
     const pageToFetch = cursor.page;
-    const pageableCourse = await getPageableCourses(
-      buildPageableCoursesBody({
-        sessions: cursor.sessions,
-        divisions: [CATALOG_DIVISION],
-        page: pageToFetch,
-      }),
-      deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {},
-    );
+    const { pageableCourse, divisionalEnrolmentIndicators } =
+      await getPageableCourses(
+        buildPageableCoursesBody({
+          sessions: cursor.sessions,
+          divisions: [CATALOG_DIVISION],
+          page: pageToFetch,
+        }),
+        deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {},
+      );
 
     await upsertCourses(
       deps.db,
@@ -141,10 +144,17 @@ export async function runScrapeChunk(
     pagesDone += 1;
 
     const total = pageableCourse.total;
+    const mergedIndicators = mergeIndicators(
+      cursor.divisionalEnrolmentIndicators,
+      divisionalEnrolmentIndicators,
+    );
     const nextCursor: ScrapeCursor = {
       ...cursor,
       page: pageToFetch + 1,
       total,
+      ...(mergedIndicators
+        ? { divisionalEnrolmentIndicators: mergedIndicators }
+        : {}),
     };
 
     await updateRunProgress(deps.db, nextCursor);
@@ -281,11 +291,15 @@ async function completeRun(
 ): Promise<CatalogMeta> {
   const courses = await readCoursesForRun(deps.db, cursor.sessions, cursor.runId);
   const total = cursor.total ?? courses.length;
+  const indicators = cursor.divisionalEnrolmentIndicators;
   const catalog: CatalogArtifact = {
     sessions: cursor.sessions,
     scrapedAt,
     total,
     courses,
+    ...(indicators && Object.keys(indicators).length > 0
+      ? { divisionalEnrolmentIndicators: indicators }
+      : {}),
   };
   const meta: CatalogMeta = {
     etag: String(cursor.runId),
@@ -363,13 +377,45 @@ function parseCursor(value: unknown): ScrapeCursor | null {
     return null;
   }
 
+  const indicators = parseIndicatorsRecord(value.divisionalEnrolmentIndicators);
+
   return {
     sessions,
     page,
     total,
     runId,
     startedAt,
+    ...(indicators ? { divisionalEnrolmentIndicators: indicators } : {}),
   };
+}
+
+function parseIndicatorsRecord(
+  value: unknown,
+): DivisionalEnrolmentIndicators | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const result: DivisionalEnrolmentIndicators = {};
+
+  for (const [division, entries] of Object.entries(value)) {
+    if (!Array.isArray(entries)) {
+      continue;
+    }
+
+    const indicators = entries.filter(
+      (entry): entry is { code: string; name: string } =>
+        isRecord(entry) &&
+        typeof entry.code === "string" &&
+        typeof entry.name === "string",
+    );
+
+    if (indicators.length > 0) {
+      result[division] = indicators;
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function isLastPage(page: number, total: number, courseCount: number): boolean {
@@ -397,6 +443,24 @@ function normalizeMaxPages(maxPages: number | undefined): number {
 
 function sameSessions(left: string[], right: string[]): boolean {
   return sessionKey(left) === sessionKey(right);
+}
+
+/**
+ * Merge newly seen indicators into the accumulated map (last-write-wins per
+ * division). Returns undefined when nothing has been accumulated so callers can
+ * keep the optional field absent under exactOptionalPropertyTypes.
+ */
+function mergeIndicators(
+  existing: DivisionalEnrolmentIndicators | undefined,
+  incoming: DivisionalEnrolmentIndicators,
+): DivisionalEnrolmentIndicators | undefined {
+  const merged: DivisionalEnrolmentIndicators = { ...(existing ?? {}) };
+
+  for (const [division, indicators] of Object.entries(incoming)) {
+    merged[division] = indicators;
+  }
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 function delay(ms: number): Promise<void> {

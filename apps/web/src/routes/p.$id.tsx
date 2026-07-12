@@ -3,6 +3,7 @@ import { usePostHog } from "@posthog/react";
 import type { Course } from "@better-ttb/shared";
 import { Import, Layers } from "lucide-react";
 import * as React from "react";
+import { cn } from "@/lib/utils";
 
 import { AppNav, MobileNav } from "@/components/app-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -14,7 +15,9 @@ import {
   buildTermBlocks,
   computeCreditTotals,
   courseKey,
+  detectLinkageViolationSectionKeys,
   pinnedKey,
+  planSelectedFromTimetableSections,
   selectedSectionsFromPlan,
 } from "@/lib/timetable";
 import { useCatalogStore } from "@/stores/catalog";
@@ -95,12 +98,29 @@ function SharedPlanRoute() {
     () => (plan ? selectedSectionsFromPlan(plan, coursesByKey) : []),
     [coursesByKey, plan],
   );
-  const fall = React.useMemo(() => buildTermBlocks(selected, "fall"), [selected]);
-  const winter = React.useMemo(() => buildTermBlocks(selected, "winter"), [selected]);
+  const disallowedSectionKeys = React.useMemo(
+    () =>
+      detectLinkageViolationSectionKeys(planSelectedFromTimetableSections(selected)),
+    [selected],
+  );
+  const fall = React.useMemo(
+    () => buildTermBlocks(selected, "fall", { disallowedSectionKeys }),
+    [disallowedSectionKeys, selected],
+  );
+  const winter = React.useMemo(
+    () => buildTermBlocks(selected, "winter", { disallowedSectionKeys }),
+    [disallowedSectionKeys, selected],
+  );
   const credits = React.useMemo(
     () => (plan ? computeCreditTotals(plan, coursesByKey) : { fall: 0, winter: 0 }),
     [coursesByKey, plan],
   );
+  const hasConflicts =
+    fall.blocks.some((block) => block.conflict) ||
+    winter.blocks.some((block) => block.conflict);
+  const hasDisallowed =
+    fall.blocks.some((block) => block.disallowed) ||
+    winter.blocks.some((block) => block.disallowed);
 
   function importSharedPlan() {
     if (!plan) {
@@ -157,6 +177,17 @@ function SharedPlanRoute() {
               </div>
             </div>
 
+            {hasConflicts && (
+              <Banner tone="error">
+                Conflicts detected. Overlapping blocks are outlined in red.
+              </Banner>
+            )}
+            {hasDisallowed && (
+              <Banner tone="warn">
+                Invalid selections detected. Some chosen sections must be taken together with a different lecture or tutorial — greyed blocks show which.
+              </Banner>
+            )}
+
             <section className="rounded-md border bg-background p-3">
               <h3 className="mb-3 text-sm font-medium">Courses</h3>
               <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
@@ -205,6 +236,27 @@ function SharedPlanRoute() {
 
       <MobileNav />
     </main>
+  );
+}
+
+function Banner({
+  children,
+  tone = "info",
+}: {
+  children: React.ReactNode;
+  tone?: "info" | "warn" | "error";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-md border bg-background px-3 py-2 text-sm",
+        tone === "warn" &&
+          "border-amber-400/50 bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200",
+        tone === "error" && "border-destructive/40 bg-destructive/5 text-destructive",
+      )}
+    >
+      {children}
+    </div>
   );
 }
 

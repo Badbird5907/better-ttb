@@ -46,9 +46,15 @@ import {
   searchCourses,
 } from "@/lib/search";
 import {
+  detectLinkageViolationSectionKeys,
   sectionConflictsWithPlan,
   type PlanSelectedSection,
 } from "@/lib/timetable";
+import {
+  getSectionAvailability,
+  selectedOthersFor,
+  type SectionAvailability,
+} from "@/lib/section-status";
 import { useRequisiteGraph } from "@/lib/requisites/use-graph";
 import {
   CourseDetailSheet,
@@ -1279,6 +1285,10 @@ function PlanPanel({
     () => detectPlanConflictKeys(plan, coursesByKey),
     [coursesByKey, plan],
   );
+  const linkageViolationKeys = React.useMemo(
+    () => detectLinkageViolationSectionKeys(planSelectedSections),
+    [planSelectedSections],
+  );
   const credits = React.useMemo(
     () => computeCreditTotals(plan, coursesByKey),
     [coursesByKey, plan],
@@ -1320,6 +1330,7 @@ function PlanPanel({
                 pinned={pinned}
                 course={coursesByKey.get(pinnedKey(pinned)) ?? null}
                 conflictKeys={conflictKeys}
+                linkageViolationKeys={linkageViolationKeys}
                 planSelectedSections={planSelectedSections}
                 onChoose={onChoose}
                 onClearChoice={onClearChoice}
@@ -1338,6 +1349,7 @@ function PinnedCourseCard({
   pinned,
   course,
   conflictKeys,
+  linkageViolationKeys,
   planSelectedSections,
   onChoose,
   onClearChoice,
@@ -1347,6 +1359,7 @@ function PinnedCourseCard({
   pinned: PinnedCourse;
   course: Course | null;
   conflictKeys: Set<string>;
+  linkageViolationKeys: Set<string>;
   planSelectedSections: readonly PlanSelectedSection[];
   onChoose: (
     courseCode: string,
@@ -1364,6 +1377,26 @@ function PinnedCourseCard({
 }) {
   const teachMethods = course ? getTeachMethods(course.sections) : [];
   const courseKeyValue = pinnedKey(pinned);
+  const hasInvalidSelection = React.useMemo(() => {
+    if (!course) {
+      return false;
+    }
+
+    return Object.entries(pinned.chosen).some(([teachMethod, sectionName]) => {
+      if (!sectionName) {
+        return false;
+      }
+
+      const section = course.sections.find(
+        (candidate) =>
+          candidate.teachMethod === teachMethod && candidate.name === sectionName,
+      );
+
+      return section
+        ? linkageViolationKeys.has(selectedConflictKey(pinned, section))
+        : false;
+    });
+  }, [course, linkageViolationKeys, pinned]);
 
   return (
     <Card className="gap-4 rounded-md py-4 shadow-xs">
@@ -1373,8 +1406,16 @@ function PinnedCourseCard({
           className="min-w-0 space-y-1 text-left"
           onClick={() => onOpenCourse(pinned)}
         >
-          <CardTitle className="truncate text-sm hover:underline">
-            {pinned.courseCode} <SectionBadge sectionCode={pinned.sectionCode} />
+          <CardTitle className="flex items-center gap-2 truncate text-sm hover:underline">
+            <span className="truncate">
+              {pinned.courseCode}{" "}
+              <SectionBadge sectionCode={pinned.sectionCode} />
+            </span>
+            {hasInvalidSelection && (
+              <span className="shrink-0 text-xs font-normal text-muted-foreground">
+                Invalid selection
+              </span>
+            )}
           </CardTitle>
           <p className="truncate text-xs text-muted-foreground">
             {course?.name ?? "Not found in loaded catalog"}
@@ -1410,19 +1451,40 @@ function PinnedCourseCard({
             const sections = course.sections.filter(
               (section) => section.teachMethod === teachMethod,
             );
+            // Resolve the chosen sections of this course's OTHER teach methods so
+            // linkage restrictions for this method's options can be evaluated.
+            const selectedOthers = selectedOthersFor(
+              course,
+              pinned.chosen,
+              teachMethod,
+            );
+            // The currently chosen section may itself be disallowed (e.g. user
+            // picked a TUT then switched the linked LEC): drive the trigger's
+            // invalid styling off that, but never let it block clearing.
+            const chosenInvalid = selectedSection
+              ? getSectionAvailability(selectedSection, selectedOthers).disabled
+              : false;
 
             return (
               <div key={teachMethod} className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <span className="font-medium">{teachMethod}</span>
-                  {hasConflict && (
+                  {hasConflict ? (
                     <span className="text-destructive">Conflict</span>
+                  ) : (
+                    chosenInvalid && (
+                      <span className="text-muted-foreground">Invalid</span>
+                    )
                   )}
                 </div>
                 <SectionCombobox
                   sections={sections}
                   value={selected}
                   hasConflict={hasConflict}
+                  invalid={chosenInvalid}
+                  availabilityOf={(section) =>
+                    getSectionAvailability(section, selectedOthers)
+                  }
                   conflictOf={(section) =>
                     // Compare against the whole plan, including this course's
                     // OTHER teach-method choices (a TUT can clash with your own
@@ -1465,6 +1527,8 @@ function SectionCombobox({
   sections,
   value,
   hasConflict,
+  invalid = false,
+  availabilityOf,
   conflictOf,
   onChoose,
   onClear,
@@ -1472,6 +1536,8 @@ function SectionCombobox({
   sections: readonly Section[];
   value: string | null;
   hasConflict: boolean;
+  invalid?: boolean;
+  availabilityOf?: (section: Section) => SectionAvailability;
   conflictOf: (section: Section) => PlanSelectedSection | null;
   onChoose: (sectionName: string) => void;
   onClear: () => void;
@@ -1493,13 +1559,27 @@ function SectionCombobox({
             "h-auto min-h-9 w-full justify-between whitespace-normal py-2 text-left font-normal",
             hasConflict &&
               "border-destructive text-destructive ring-destructive/20",
+            // Grey/dashed invalid look, distinct from the red conflict styling;
+            // conflict wins if both apply.
+            !hasConflict &&
+              invalid &&
+              "border-dashed border-muted-foreground/50 text-muted-foreground",
           )}
           onClick={(event) => event.stopPropagation()}
         >
           <span className="min-w-0 flex-1 truncate">
-            {selectedSection
-              ? formatSectionOption(selectedSection)
-              : "Auto — let generator choose"}
+            {selectedSection ? (
+              <>
+                {formatSectionOption(selectedSection)}
+                {selectedSection.enrolmentInd && (
+                  <span className="ml-1.5 text-muted-foreground">
+                    · {selectedSection.enrolmentInd}
+                  </span>
+                )}
+              </>
+            ) : (
+              "Auto — let generator choose"
+            )}
           </span>
           <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
         </Button>
@@ -1530,14 +1610,25 @@ function SectionCombobox({
                 Auto — let generator choose
               </CommandItem>
               {sections.map((section) => {
-                const cancelled = section.cancelInd === "Y";
-                const conflict = cancelled ? null : conflictOf(section);
+                const isSelected = value === section.name;
+                // Availability supersedes the ad-hoc cancelled check (cancelled
+                // is one of its reasons); fall back to the cancelled indicator
+                // when no availability resolver is provided.
+                const availability = availabilityOf
+                  ? availabilityOf(section)
+                  : section.cancelInd === "Y"
+                    ? { disabled: true }
+                    : { disabled: false };
+                // Never disable the currently chosen option — the user must be
+                // able to keep or re-pick it even when it's now disallowed.
+                const disabled = availability.disabled && !isSelected;
+                const conflict = availability.disabled ? null : conflictOf(section);
 
                 return (
                   <CommandItem
                     key={section.name}
                     value={`${section.name} ${formatSectionOption(section)}`}
-                    disabled={cancelled}
+                    disabled={disabled}
                     onSelect={() => {
                       onChoose(section.name);
                       setOpen(false);
@@ -1547,13 +1638,30 @@ function SectionCombobox({
                     <Check
                       className={cn(
                         "mr-2 size-4",
-                        value === section.name ? "opacity-100" : "opacity-0",
+                        isSelected ? "opacity-100" : "opacity-0",
                       )}
                     />
                     <span className="min-w-0 flex-1">
-                      {formatSectionOption(section)}
-                      {conflict && (
-                        <span className="ml-1 font-medium">(conflicts)</span>
+                      <span>
+                        {formatSectionOption(section)}
+                        {section.enrolmentInd && (
+                          <span className="ml-1.5 text-muted-foreground">
+                            · {section.enrolmentInd}
+                          </span>
+                        )}
+                        {conflict && (
+                          <span className="ml-1 font-medium">(conflicts)</span>
+                        )}
+                        {availability.hint && (
+                          <span className="ml-1 text-muted-foreground">
+                            (TBA)
+                          </span>
+                        )}
+                      </span>
+                      {availability.disabled && availability.reason && (
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                          {availability.reason}
+                        </span>
                       )}
                     </span>
                   </CommandItem>

@@ -109,8 +109,10 @@ import {
   computeCreditTotals,
   courseKey,
   daysOnCampusCount,
+  detectLinkageViolationSectionKeys,
   getActivePlanCourses,
   pinnedKey,
+  planSelectedFromTimetableSections,
   selectedSectionsFromCandidate,
   selectedSectionsFromPlan,
   totalWalkMinutes,
@@ -221,12 +223,25 @@ function TimetableRoute() {
         : selectedSectionsFromPlan(activePlan, coursesByKey),
     [activePlan, coursesByKey, previewCandidate],
   );
+  const disallowedSectionKeys = React.useMemo(
+    () =>
+      detectLinkageViolationSectionKeys(
+        planSelectedFromTimetableSections(visibleSelections),
+      ),
+    [visibleSelections],
+  );
   const termData = React.useMemo(
     () => ({
-      fall: buildTermBlocks(visibleSelections, "fall", { preview: Boolean(previewCandidate) }),
-      winter: buildTermBlocks(visibleSelections, "winter", { preview: Boolean(previewCandidate) }),
+      fall: buildTermBlocks(visibleSelections, "fall", {
+        preview: Boolean(previewCandidate),
+        disallowedSectionKeys,
+      }),
+      winter: buildTermBlocks(visibleSelections, "winter", {
+        preview: Boolean(previewCandidate),
+        disallowedSectionKeys,
+      }),
     }),
-    [previewCandidate, visibleSelections],
+    [disallowedSectionKeys, previewCandidate, visibleSelections],
   );
   const creditTotals = React.useMemo(
     () => computeCreditTotals(activePlan, coursesByKey),
@@ -234,6 +249,9 @@ function TimetableRoute() {
   );
   const hasConflicts = TERMS.some((entry) =>
     termData[entry].blocks.some((block) => block.conflict),
+  );
+  const hasDisallowed = TERMS.some((entry) =>
+    termData[entry].blocks.some((block) => block.disallowed),
   );
   const tightTransferLink = React.useMemo(
     () => findTightTransferLink(visibleSelections),
@@ -538,6 +556,11 @@ function TimetableRoute() {
               {hasConflicts && (
                 <Banner tone="error">
                   Conflicts detected. Overlapping blocks are outlined in red.
+                </Banner>
+              )}
+              {hasDisallowed && (
+                <Banner tone="warn">
+                  Invalid selections detected. Some chosen sections must be taken together with a different lecture or tutorial — greyed blocks show which.
                 </Banner>
               )}
               {previewCandidate && (

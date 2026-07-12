@@ -1,4 +1,4 @@
-import type { Course } from "@better-ttb/shared";
+import type { Course, DivisionalEnrolmentIndicators } from "@better-ttb/shared";
 import { create } from "zustand";
 
 import { getCatalogCache, putCatalogCache } from "@/lib/idb";
@@ -11,6 +11,7 @@ export interface CatalogArtifact {
   scrapedAt: string;
   total: number;
   courses: Course[];
+  divisionalEnrolmentIndicators?: DivisionalEnrolmentIndicators;
 }
 
 export interface CatalogDepartment {
@@ -27,6 +28,7 @@ interface CatalogState {
   sessionsKey: string | null;
   departments: CatalogDepartment[];
   levels: string[];
+  divisionalEnrolmentIndicators: DivisionalEnrolmentIndicators;
   loadCatalog: (sessions: string[]) => Promise<void>;
 }
 
@@ -38,6 +40,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   sessionsKey: null,
   departments: [],
   levels: [],
+  divisionalEnrolmentIndicators: {},
   loadCatalog: async (sessions) => {
     const normalizedSessions = normalizeSessions(sessions);
     const key = normalizedSessions.join(",");
@@ -54,6 +57,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
         sessionsKey: key,
         departments: [],
         levels: [],
+        divisionalEnrolmentIndicators: {},
       });
     }
 
@@ -84,6 +88,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
           sessionsKey: key,
           departments: [],
           levels: [],
+          divisionalEnrolmentIndicators: {},
         });
         return;
       }
@@ -117,6 +122,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
         sessionsKey: key,
         departments: [],
         levels: [],
+        divisionalEnrolmentIndicators: {},
       });
     }
   },
@@ -167,6 +173,7 @@ function setCatalogReady(
     sessionsKey,
     departments: deriveDepartments(catalog.courses),
     levels: deriveLevels(catalog.courses),
+    divisionalEnrolmentIndicators: catalog.divisionalEnrolmentIndicators ?? {},
   });
 }
 
@@ -232,12 +239,48 @@ function parseCatalogArtifact(value: unknown): CatalogArtifact {
     throw new Error("Catalog response has an unexpected shape");
   }
 
+  const divisionalEnrolmentIndicators = parseDivisionalEnrolmentIndicators(
+    value.divisionalEnrolmentIndicators,
+  );
+
   return {
     sessions,
     scrapedAt,
     total,
     courses: courses as Course[],
+    ...(divisionalEnrolmentIndicators
+      ? { divisionalEnrolmentIndicators }
+      : {}),
   };
+}
+
+function parseDivisionalEnrolmentIndicators(
+  value: unknown,
+): DivisionalEnrolmentIndicators | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const result: DivisionalEnrolmentIndicators = {};
+
+  for (const [division, entries] of Object.entries(value)) {
+    if (!Array.isArray(entries)) {
+      continue;
+    }
+
+    const indicators = entries.filter(
+      (entry): entry is { code: string; name: string } =>
+        isRecord(entry) &&
+        typeof entry.code === "string" &&
+        typeof entry.name === "string",
+    );
+
+    if (indicators.length > 0) {
+      result[division] = indicators;
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
