@@ -721,6 +721,12 @@ export function formatBreadth(breadth: string): string {
   return name ? `BR ${match[1]}: ${name}` : `BR ${match[1]}`;
 }
 
+/** Compact breadth label ("BR 3") for space-constrained UI like result cards. */
+export function formatBreadthShort(breadth: string): string {
+  const match = breadth.match(/([1-5])$/);
+  return match?.[1] ? `BR ${match[1]}` : breadth;
+}
+
 export function groupSectionsByTeachMethod(
   sections: readonly Section[],
 ): Array<[TeachMethod, Section[]]> {

@@ -65,6 +65,7 @@ import {
   CourseDetailSheet,
   SectionBadge,
   formatBreadth,
+  formatBreadthShort,
   formatMeetingTime,
   formatRoom,
   getTeachMethods,
@@ -1241,8 +1242,8 @@ function CourseResultRow({
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge variant="outline">{course.maxCredit.toFixed(1)} credit</Badge>
             {breadths.slice(0, 3).map((breadth) => (
-              <Badge key={breadth} variant="secondary">
-                {formatBreadth(breadth)}
+              <Badge key={breadth} variant="secondary" title={formatBreadth(breadth)}>
+                {formatBreadthShort(breadth)}
               </Badge>
             ))}
             {full && <Badge variant="destructive">Full</Badge>}
