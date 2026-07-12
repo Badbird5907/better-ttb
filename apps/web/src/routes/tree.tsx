@@ -15,13 +15,13 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
-import { AppNav, MobileNav } from "@/components/app-nav";
+import { AppHeader } from "@/components/app-header";
+import { MobileNav } from "@/components/app-nav";
 import { CourseDetailSheet } from "@/components/course/course-detail-sheet";
 import {
   extractLiveCourse,
   mergeLiveEnrolment,
 } from "@/lib/live-course";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -249,7 +249,7 @@ function TreeRoute() {
 
   return (
     <main className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
-      <TreeHeader />
+      <AppHeader brandIcon={Network} />
 
       <div className="flex flex-wrap items-center gap-3 border-t px-4 py-3">
         <CoursePicker graph={graph} value={focusCode} onSelect={setFocus} />
@@ -932,27 +932,3 @@ function collectPlanSelectedSections(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Header
-// ---------------------------------------------------------------------------
-
-function TreeHeader() {
-  return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-4 px-4">
-      <div className="flex min-w-0 items-center gap-4">
-        <div className="flex items-center gap-2">
-          <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Network className="size-4" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold">Better TTB</h1>
-            <p className="hidden truncate text-xs text-muted-foreground sm:block">By Evan Yu</p>
-          </div>
-        </div>
-
-        <AppNav />
-      </div>
-      <ThemeToggle />
-    </header>
-  );
-}

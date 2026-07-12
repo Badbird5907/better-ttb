@@ -18,13 +18,10 @@ import { millisofdayToHHMM } from "@better-ttb/shared";
 import {
   Check,
   ChevronRight,
-  Copy,
   Download,
   FileJson,
   Layers,
-  Plus,
   RotateCcw,
-  Share2,
   Trash2,
   TriangleAlert,
   Upload,
@@ -33,9 +30,9 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
-import { AppNav, MobileNav } from "@/components/app-nav";
+import { AppHeader } from "@/components/app-header";
+import { MobileNav } from "@/components/app-nav";
 import { CourseDetailSheet } from "@/components/course/course-detail-sheet";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { WeekGrid } from "@/components/timetable/WeekGrid";
 import type { BlockedWindow } from "@/components/timetable/WeekGrid";
 import {
@@ -125,7 +122,6 @@ import {
 import { cn } from "@/lib/utils";
 import { useCatalogStore } from "@/stores/catalog";
 import {
-  DEFAULT_PLAN_SESSIONS,
   activePlanFromState,
   createDefaultGeneratorPrefs,
   type GeneratorPrefs,
@@ -170,8 +166,6 @@ function TimetableRoute() {
   const loadCatalog = useCatalogStore((state) => state.loadCatalog);
   const plans = usePlanStore((state) => state.plans);
   const activePlanId = usePlanStore((state) => state.activePlanId);
-  const setActivePlan = usePlanStore((state) => state.setActivePlan);
-  const newPlan = usePlanStore((state) => state.newPlan);
   const choose = usePlanStore((state) => state.choose);
   const chooseMany = usePlanStore((state) => state.chooseMany);
   const clearChoice = usePlanStore((state) => state.clearChoice);
@@ -197,10 +191,6 @@ function TimetableRoute() {
     string | null
   >(null);
   const [refreshError, setRefreshError] = React.useState<string | null>(null);
-  const [shareOpen, setShareOpen] = React.useState(false);
-  const [shareUrl, setShareUrl] = React.useState("");
-  const [shareError, setShareError] = React.useState<string | null>(null);
-  const [sharing, setSharing] = React.useState(false);
   const [workerState, setWorkerState] = React.useState<"idle" | "running" | "done" | "error">("idle");
   const [workerError, setWorkerError] = React.useState<string | null>(null);
   const [generationResult, setGenerationResult] = React.useState<GenerationResult | null>(null);
@@ -451,45 +441,6 @@ function TimetableRoute() {
     setPreviewCandidate(null);
   }
 
-  async function sharePlan() {
-    setSharing(true);
-    setShareError(null);
-
-    try {
-      const response = await fetch("/api/share", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-PostHog-Session-Id": posthog.get_session_id() ?? "",
-          "X-PostHog-Distinct-Id": posthog.get_distinct_id() ?? "",
-        },
-        body: JSON.stringify({ plan: activePlan }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Share failed with HTTP ${response.status}`);
-      }
-
-      const body = (await response.json()) as { id?: unknown };
-
-      if (typeof body.id !== "string") {
-        throw new Error("Share response did not include an id");
-      }
-
-      const url = `${window.location.origin}/p/${body.id}`;
-      setShareUrl(url);
-      setShareOpen(true);
-      posthog.capture("plan_shared", {
-        pinned_course_count: activePlan.pinned.length,
-      });
-    } catch (error) {
-      setShareError(error instanceof Error ? error.message : String(error));
-      setShareOpen(true);
-    } finally {
-      setSharing(false);
-    }
-  }
-
   function exportPlanJson() {
     posthog.capture("plan_exported_json", {
       pinned_course_count: activePlan.pinned.length,
@@ -535,19 +486,66 @@ function TimetableRoute() {
   return (
     <TooltipProvider>
       <main className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
-        <TimetableHeader
-          activePlan={activePlan}
-          plans={plans}
-          onSetActivePlan={(planId) => {
-            setPreviewCandidate(null);
-            setActivePlan(planId);
-          }}
-          onNewPlan={() => newPlan(DEFAULT_PLAN_SESSIONS)}
-          onShare={sharePlan}
-          onExportIcs={exportIcs}
-          onExportJson={exportPlanJson}
-          onImportJson={() => importInputRef.current?.click()}
-          sharing={sharing}
+        <AppHeader
+          brandIcon={Layers}
+          onActivePlanChange={() => setPreviewCandidate(null)}
+          actions={
+            <>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button type="button" variant="outline" size="icon-sm">
+                    <FileJson />
+                    <span className="sr-only">Plan import and export</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-56 p-2">
+                  <div className="space-y-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start"
+                      onClick={exportPlanJson}
+                    >
+                      <Download />
+                      Export JSON
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start"
+                      onClick={() => importInputRef.current?.click()}
+                    >
+                      <Upload />
+                      Import JSON
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start sm:hidden"
+                      onClick={exportIcs}
+                    >
+                      <Download />
+                      Export ICS
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="hidden sm:inline-flex"
+                onClick={exportIcs}
+              >
+                <Download />
+                ICS
+              </Button>
+            </>
+          }
         />
 
         <input
@@ -608,9 +606,6 @@ function TimetableRoute() {
                 </div>
               </div>
 
-              {shareError && (
-                <Banner tone="error">Share failed: {shareError}</Banner>
-              )}
               {catalogError && <Banner tone="warn">Catalog warning: {catalogError}</Banner>}
               {status === "loading" && <Banner>Loading catalog for this plan.</Banner>}
               {status === "empty" && (
@@ -789,130 +784,9 @@ function TimetableRoute() {
           }}
         />
 
-        <Dialog open={shareOpen} onOpenChange={setShareOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Share plan</DialogTitle>
-              <DialogDescription>
-                Anyone with the URL can view the read-only plan summary.
-              </DialogDescription>
-            </DialogHeader>
-            {shareError ? (
-              <p className="text-sm text-destructive">{shareError}</p>
-            ) : (
-              <div className="flex gap-2">
-                <Input readOnly value={shareUrl} />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void navigator.clipboard?.writeText(shareUrl)}
-                >
-                  <Copy />
-                  Copy
-                </Button>
-              </div>
-            )}
-            <DialogFooter showCloseButton />
-          </DialogContent>
-        </Dialog>
-
         <MobileNav />
       </main>
     </TooltipProvider>
-  );
-}
-
-function TimetableHeader({
-  activePlan,
-  plans,
-  sharing,
-  onSetActivePlan,
-  onNewPlan,
-  onShare,
-  onExportIcs,
-  onExportJson,
-  onImportJson,
-}: {
-  activePlan: Plan;
-  plans: Plan[];
-  sharing: boolean;
-  onSetActivePlan: (planId: string) => void;
-  onNewPlan: () => void;
-  onShare: () => void;
-  onExportIcs: () => void;
-  onExportJson: () => void;
-  onImportJson: () => void;
-}) {
-  return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-4 px-4">
-      <div className="flex min-w-0 items-center gap-4">
-        <div className="flex items-center gap-2">
-          <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Layers className="size-4" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold">Better TTB</h1>
-            <p className="hidden truncate text-xs text-muted-foreground sm:block">By Evan Yu</p>
-          </div>
-        </div>
-
-        <AppNav />
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2">
-        <Select value={activePlan.id} onValueChange={onSetActivePlan}>
-          <SelectTrigger className="w-[110px] min-w-0 sm:w-[170px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {plans.map((plan) => (
-              <SelectItem key={plan.id} value={plan.id}>
-                {plan.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button type="button" variant="outline" size="icon-sm">
-              <FileJson />
-              <span className="sr-only">Plan import and export</span>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-56 p-2">
-            <div className="space-y-1">
-              <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={onNewPlan}>
-                <Plus />
-                New plan
-              </Button>
-              <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={onExportJson}>
-                <Download />
-                Export JSON
-              </Button>
-              <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={onImportJson}>
-                <Upload />
-                Import JSON
-              </Button>
-              <Button type="button" variant="ghost" size="sm" className="w-full justify-start sm:hidden" onClick={onExportIcs}>
-                <Download />
-                Export ICS
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
-
-        <Button type="button" variant="outline" size="sm" className="hidden sm:inline-flex" onClick={onExportIcs}>
-          <Download />
-          ICS
-        </Button>
-        <Button type="button" size="sm" onClick={onShare} disabled={sharing}>
-          <Share2 />
-          <span className="hidden sm:inline">Share</span>
-        </Button>
-        <ThemeToggle />
-      </div>
-    </header>
   );
 }
 
