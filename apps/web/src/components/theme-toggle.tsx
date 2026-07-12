@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   THEME_STORAGE_KEY,
   applyTheme,
+  isTheme,
   readStoredTheme,
   resolveTheme,
   type Theme,
@@ -35,6 +36,21 @@ export function useTheme(): {
 
   React.useEffect(() => {
     setThemeState(readStoredTheme());
+  }, []);
+
+  // Follow theme changes made in other tabs; the storage event only fires in
+  // tabs that did not perform the write.
+  React.useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== THEME_STORAGE_KEY) {
+        return;
+      }
+
+      setThemeState(isTheme(event.newValue) ? event.newValue : "system");
+    };
+
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   React.useEffect(() => {
