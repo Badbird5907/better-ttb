@@ -3,6 +3,7 @@ import { Copy, MoreHorizontal, Pencil, Plus, Share2, Trash2 } from "lucide-react
 import * as React from "react";
 
 import { AppNav } from "@/components/app-nav";
+import { CompletedCoursesButton } from "@/components/completed-courses-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -199,6 +200,8 @@ export function AppHeader({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <CompletedCoursesButton />
 
           {actions}
 

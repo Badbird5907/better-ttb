@@ -4,7 +4,9 @@ import * as React from "react";
 
 import { type GroupNode, type ReqNode } from "@/lib/requisites/ast";
 import type { RequisiteGraph } from "@/lib/requisites/graph";
+import { evaluateReq } from "@/lib/requisites/satisfies";
 import { cn } from "@/lib/utils";
+import { useCompletedCoursesStore } from "@/stores/completed-courses";
 import { badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CourseChip, ReqNodeView } from "./requisite-view";
@@ -16,6 +18,9 @@ const DIRECT_DEPENDENT_CAP = 24;
 // the first few into a single "+N more" chip to keep the tree scannable.
 const OUT_OF_CATALOG_COLLAPSE_THRESHOLD = 4;
 const OUT_OF_CATALOG_KEEP = 3;
+
+const SATISFIED_GROUP_CLASSES =
+  "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300";
 
 interface MiniPrereqTreeProps {
   code: string;
@@ -136,10 +141,12 @@ function GroupBranch({
 }) {
   const [collapsed, setCollapsed] = React.useState(false);
   const [extrasExpanded, setExtrasExpanded] = React.useState(false);
+  const courses = useCompletedCoursesStore((state) => state.courses);
 
   const n = node.type === "nOf" ? node.n : 0;
   const label =
     node.type === "and" ? "ALL OF" : node.type === "or" ? "ONE OF" : `${n} OF`;
+  const satisfied = evaluateReq(node, courses) === "met";
 
   const isOutOfCatalog = React.useCallback(
     (child: ReqNode) =>
@@ -205,7 +212,12 @@ function GroupBranch({
         ) : (
           <ChevronDown className="size-3.5" />
         )}
-        <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+        <span
+          className={cn(
+            "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+            satisfied ? SATISFIED_GROUP_CLASSES : "bg-muted",
+          )}
+        >
           {label}
         </span>
       </button>

@@ -11,8 +11,10 @@ import {
 import type { RequisiteGraph } from "@/lib/requisites/graph";
 import { preferredOffering } from "@/lib/requisites/use-graph";
 import { extractCourseCodes, parseRequisite } from "@/lib/requisites/parse";
+import { courseStatus, evaluateReq } from "@/lib/requisites/satisfies";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { cn } from "@/lib/utils";
+import { useCompletedCoursesStore } from "@/stores/completed-courses";
 import { badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -201,6 +203,12 @@ const GROUP_LABELS: Record<"and" | "or" | "nOf", (n: number) => string> = {
   nOf: (n) => `${n} OF`,
 };
 
+const SATISFIED_COURSE_CLASSES =
+  "border-emerald-300 bg-emerald-100 text-emerald-800 hover:bg-emerald-100/80 dark:border-emerald-500/40 dark:bg-emerald-500/20 dark:text-emerald-300";
+
+const SATISFIED_GROUP_CLASSES =
+  "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300";
+
 export function ReqNodeView({
   node,
   graph,
@@ -210,6 +218,8 @@ export function ReqNodeView({
   graph: RequisiteGraph | null;
   onOpenCourse: ((code: string) => void) | undefined;
 }) {
+  const courses = useCompletedCoursesStore((state) => state.courses);
+
   if (isCourseNode(node)) {
     return (
       <CourseChip
@@ -232,13 +242,14 @@ export function ReqNodeView({
   // Group node (and / or / nOf).
   const n = node.type === "nOf" ? node.n : 0;
   const label = GROUP_LABELS[node.type](n);
+  const status = evaluateReq(node, courses);
   const allLeaves = node.children.every(
     (child) => isCourseNode(child) || isCreditsNode(child) || isTextNode(child),
   );
 
   return (
     <div className="space-y-1">
-      <GroupBadge label={label} />
+      <GroupBadge label={label} satisfied={status === "met"} />
       {allLeaves ? (
         <div className="flex flex-wrap items-center gap-1.5 pl-1">
           {node.children.map((child, index) => (
@@ -263,9 +274,22 @@ export function ReqNodeView({
   );
 }
 
-function GroupBadge({ label }: { label: string }) {
+function GroupBadge({
+  label,
+  satisfied = false,
+}: {
+  label: string;
+  satisfied?: boolean;
+}) {
   return (
-    <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+    <span
+      className={cn(
+        "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        satisfied
+          ? SATISFIED_GROUP_CLASSES
+          : "bg-muted text-muted-foreground",
+      )}
+    >
       {label}
     </span>
   );
@@ -282,8 +306,10 @@ export function CourseChip({
   graph: RequisiteGraph | null;
   onOpenCourse: ((code: string) => void) | undefined;
 }) {
+  const courses = useCompletedCoursesStore((state) => state.courses);
   const node = graph?.nodes.get(code);
   const inCatalog = node?.inCatalog ?? false;
+  const status = courseStatus(code, minGrade, courses);
   const courseName = React.useMemo(() => {
     if (!node || node.offerings.length === 0) {
       return null;
@@ -309,6 +335,7 @@ export function CourseChip({
             className={cn(
               badgeVariants({ variant: "secondary" }),
               "cursor-pointer font-mono text-xs hover:bg-secondary/70 focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              status === "met" && SATISFIED_COURSE_CLASSES,
             )}
             onClick={() => onOpenCourse(code)}
           >
@@ -329,7 +356,10 @@ export function CourseChip({
         <span
           className={cn(
             badgeVariants({ variant: "outline" }),
-            "cursor-default border-dashed font-mono text-xs text-muted-foreground opacity-70",
+            "cursor-default border-dashed font-mono text-xs",
+            status === "met"
+              ? SATISFIED_COURSE_CLASSES
+              : "text-muted-foreground opacity-70",
           )}
         >
           {label}

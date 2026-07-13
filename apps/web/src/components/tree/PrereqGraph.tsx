@@ -34,8 +34,14 @@ import {
   type EdgeKind,
   type RequisiteGraph,
 } from "@/lib/requisites/graph";
+import {
+  courseStatus,
+  evaluateReq,
+  type CompletedCourses,
+} from "@/lib/requisites/satisfies";
 import { preferredOffering } from "@/lib/requisites/use-graph";
 import { cn } from "@/lib/utils";
+import { useCompletedCoursesStore } from "@/stores/completed-courses";
 
 // elk needs concrete dimensions before it can lay anything out, so every node
 // type has a fixed footprint that matches the CSS below.
@@ -57,6 +63,7 @@ interface CourseNodeData {
   credit: string | null;
   inCatalog: boolean;
   isFocus: boolean;
+  completed: boolean;
   [key: string]: unknown;
 }
 
@@ -64,6 +71,7 @@ interface GateNodeData {
   kind: "gate";
   gate: GateKind;
   label: string;
+  satisfied: boolean;
   [key: string]: unknown;
 }
 
@@ -106,14 +114,15 @@ function PrereqGraphInner({
   onFocusCourse,
 }: PrereqGraphProps) {
   const { fitView } = useReactFlow();
+  const completed = useCompletedCoursesStore((state) => state.courses);
   const [layout, setLayout] = React.useState<{
     nodes: FlowNode[];
     edges: FlowEdge[];
   } | null>(null);
 
   const raw = React.useMemo(
-    () => buildFlowGraph(graph, focusCode, depth, kinds),
-    [graph, focusCode, depth, kinds],
+    () => buildFlowGraph(graph, focusCode, depth, kinds, completed),
+    [graph, focusCode, depth, kinds, completed],
   );
 
   React.useEffect(() => {
@@ -245,6 +254,7 @@ function buildFlowGraph(
   focusCode: string,
   depth: number,
   kinds: EdgeKind[],
+  completed: CompletedCourses,
 ): RawGraph {
   const opts =
     depth === Number.POSITIVE_INFINITY ? { kinds } : { depth, kinds };
@@ -277,6 +287,7 @@ function buildFlowGraph(
         credit: creditLabel(offering),
         inCatalog: node?.inCatalog ?? false,
         isFocus: code === focusCode,
+        completed: courseStatus(code, undefined, completed) === "met",
       },
     });
   };
@@ -327,6 +338,7 @@ function buildFlowGraph(
         edges,
         addCourseNode,
         () => `gate-${code}-${kind}-${gateId++}`,
+        completed,
       );
 
       void emit;
@@ -388,6 +400,7 @@ function renderReqTree(
   edges: FlowEdge[],
   addCourseNode: (code: string) => void,
   nextGateId: () => string,
+  completed: CompletedCourses,
 ): void {
   // The producer connects into `targetId`. Returns the source node id to wire.
   const walk = (current: ReqNode): string | null => {
@@ -417,7 +430,7 @@ function renderReqTree(
       }
 
       const gateId = nextGateId();
-      nodes.push(gateFlowNode(gateId, current));
+      nodes.push(gateFlowNode(gateId, current, completed));
 
       for (const child of children) {
         const childId = walk(child);
@@ -507,12 +520,21 @@ function reqFlowNode(id: string, text: string): FlowNode {
   };
 }
 
-function gateFlowNode(id: string, group: Extract<ReqNode, { type: "and" | "or" | "nOf" }>): FlowNode {
+function gateFlowNode(
+  id: string,
+  group: Extract<ReqNode, { type: "and" | "or" | "nOf" }>,
+  completed: CompletedCourses,
+): FlowNode {
   return {
     id,
     type: "gate",
     position: { x: 0, y: 0 },
-    data: { kind: "gate", gate: group.type, label: gateLabel(group) },
+    data: {
+      kind: "gate",
+      gate: group.type,
+      label: gateLabel(group),
+      satisfied: evaluateReq(group, completed) === "met",
+    },
   };
 }
 
@@ -662,10 +684,13 @@ function CourseFlowNode({ data }: NodeProps<FlowNode>) {
       style={{ width: COURSE_W, height: COURSE_H }}
       className={cn(
         "flex flex-col justify-center gap-0.5 rounded-md border bg-card px-3 py-2 text-card-foreground shadow-sm transition-colors",
+        data.completed &&
+          !data.isFocus &&
+          "border-emerald-400 bg-emerald-50 dark:border-emerald-500/50 dark:bg-emerald-950/40",
         data.isFocus &&
           "border-blue-500 bg-blue-50 ring-2 ring-blue-500 ring-offset-1 ring-offset-background dark:border-blue-400 dark:bg-blue-950/40 dark:ring-blue-400",
         dimmed
-          ? "cursor-default border-dashed opacity-40"
+          ? cn("cursor-default border-dashed", !data.completed && "opacity-40")
           : "cursor-pointer hover:border-ring",
       )}
     >
@@ -692,7 +717,12 @@ function GateFlowNode({ data }: NodeProps<FlowNode>) {
   return (
     <div
       style={{ width: GATE_W, height: GATE_H }}
-      className="flex items-center justify-center rounded-full border bg-muted text-[11px] font-semibold text-muted-foreground"
+      className={cn(
+        "flex items-center justify-center rounded-full border text-[11px] font-semibold",
+        data.satisfied
+          ? "border-emerald-400 bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
+          : "bg-muted text-muted-foreground",
+      )}
     >
       <Handle type="target" position={Position.Top} className="!bg-muted-foreground" />
       {data.label}
