@@ -11,11 +11,13 @@ import { WeekGrid } from "@/components/timetable/WeekGrid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { parsePlanImport } from "@/lib/plan-io";
+import { useCatalogForSessions } from "@/lib/use-catalog";
 import {
   buildTermBlocks,
   computeCreditTotals,
   courseKey,
   detectLinkageViolationSectionKeys,
+  findPlanSelectionIssues,
   pinnedKey,
   planSelectedFromTimetableSections,
   selectedSectionsFromPlan,
@@ -34,7 +36,6 @@ function SharedPlanRoute() {
   const navigate = useNavigate();
   const status = useCatalogStore((state) => state.status);
   const catalog = useCatalogStore((state) => state.catalog);
-  const loadCatalog = useCatalogStore((state) => state.loadCatalog);
   const importPlan = usePlanStore((state) => state.importPlan);
   const [plan, setPlan] = React.useState<Plan | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -82,11 +83,7 @@ function SharedPlanRoute() {
     };
   }, [id]);
 
-  React.useEffect(() => {
-    if (plan) {
-      void loadCatalog(plan.sessions);
-    }
-  }, [loadCatalog, plan]);
+  useCatalogForSessions(plan?.sessions ?? null);
 
   const coursesByKey = React.useMemo(() => {
     const map = new Map<string, Course>();
@@ -96,6 +93,10 @@ function SharedPlanRoute() {
   }, [catalog]);
   const selected = React.useMemo(
     () => (plan ? selectedSectionsFromPlan(plan, coursesByKey) : []),
+    [coursesByKey, plan],
+  );
+  const planSelectionIssues = React.useMemo(
+    () => (plan ? findPlanSelectionIssues(plan, coursesByKey) : []),
     [coursesByKey, plan],
   );
   const disallowedSectionKeys = React.useMemo(
@@ -185,6 +186,12 @@ function SharedPlanRoute() {
             {hasDisallowed && (
               <Banner tone="warn">
                 Invalid selections detected. Some chosen sections must be taken together with a different lecture or tutorial — greyed blocks show which.
+              </Banner>
+            )}
+            {planSelectionIssues.length > 0 && (
+              <Banner tone="warn">
+                This shared plan contains {planSelectionIssues.length} section selection
+                {planSelectionIssues.length === 1 ? "" : "s"} that no longer exist in the current catalog.
               </Banner>
             )}
 

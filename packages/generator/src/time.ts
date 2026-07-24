@@ -5,6 +5,7 @@ import type {
   Section,
   SectionCode,
 } from "@better-ttb/shared";
+import { isSectionFull } from "@better-ttb/shared";
 
 import type { Coordinates, Term } from "./types";
 
@@ -108,7 +109,7 @@ export function repetitionsCanConflict(a: MeetingTime, b: MeetingTime): boolean 
 }
 
 export function isFullSection(section: Section): boolean {
-  return section.currentEnrolment >= section.maxEnrolment;
+  return isSectionFull(section);
 }
 
 export function sectionDeliveryModes(section: Section): DeliveryMode[] {

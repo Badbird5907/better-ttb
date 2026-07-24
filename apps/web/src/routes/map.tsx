@@ -16,7 +16,13 @@ import {
   type DayItinerary,
   type ItineraryTransfer,
 } from "@/lib/itinerary";
-import { courseKey, selectedSectionsFromPlan, type Term } from "@/lib/timetable";
+import {
+  courseKey,
+  findPlanSelectionIssues,
+  selectedSectionsFromPlan,
+  type Term,
+} from "@/lib/timetable";
+import { useCatalogForSessions } from "@/lib/use-catalog";
 import { cn } from "@/lib/utils";
 import { useCatalogStore } from "@/stores/catalog";
 import { activePlanFromState, usePlanStore } from "@/stores/plan";
@@ -54,18 +60,13 @@ function MapRoute() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const catalog = useCatalogStore((state) => state.catalog);
-  const loadCatalog = useCatalogStore((state) => state.loadCatalog);
   const plans = usePlanStore((state) => state.plans);
   const activePlanId = usePlanStore((state) => state.activePlanId);
   const activePlan = React.useMemo(
     () => activePlanFromState({ plans, activePlanId }),
     [activePlanId, plans],
   );
-  const activeSessionsKey = activePlan.sessions.join(",");
-
-  React.useEffect(() => {
-    void loadCatalog(activePlan.sessions);
-  }, [activePlan.sessions, activeSessionsKey, loadCatalog]);
+  useCatalogForSessions(activePlan.sessions);
 
   const coursesByKey = React.useMemo(() => {
     const map = new Map<string, Course>();
@@ -75,6 +76,10 @@ function MapRoute() {
   }, [catalog]);
   const selectedSections = React.useMemo(
     () => selectedSectionsFromPlan(activePlan, coursesByKey),
+    [activePlan, coursesByKey],
+  );
+  const planSelectionIssues = React.useMemo(
+    () => findPlanSelectionIssues(activePlan, coursesByKey),
     [activePlan, coursesByKey],
   );
 
@@ -132,6 +137,12 @@ function MapRoute() {
           </TabsList>
         </Tabs>
       </div>
+
+      {planSelectionIssues.length > 0 && (
+        <div className="border-t border-amber-400/50 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+          Some saved sections are no longer available and are omitted from this map.
+        </div>
+      )}
 
       <div className="grid min-h-0 flex-1 grid-rows-[minmax(240px,1fr)_auto] border-t pb-16 md:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] md:grid-rows-1 md:pb-0">
         <section className="relative min-h-0">

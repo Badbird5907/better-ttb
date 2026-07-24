@@ -9,9 +9,8 @@ import type {
   Section,
   SectionCode,
   TeachMethod,
-  TtbCourseLookupResponse,
 } from "@better-ttb/shared";
-import { formatSessionLabel, parseSessionCode } from "@better-ttb/shared";
+import { formatSessionLabel, isSectionFull, parseSessionCode } from "@better-ttb/shared";
 import {
   Check,
   ChevronsUpDown,
@@ -27,10 +26,7 @@ import * as React from "react";
 
 import { AppHeader } from "@/components/app-header";
 import { MobileNav } from "@/components/app-nav";
-import {
-  extractLiveCourse,
-  mergeLiveEnrolment,
-} from "@/lib/live-course";
+import { useCatalogForSessions } from "@/lib/use-catalog";
 import {
   DAY_FILTERS,
   DEFAULT_SEARCH_FILTERS,
@@ -137,6 +133,7 @@ function Home() {
   const departments = useCatalogStore((state) => state.departments);
   const levels = useCatalogStore((state) => state.levels);
   const loadCatalog = useCatalogStore((state) => state.loadCatalog);
+  const refreshCatalogCourse = useCatalogStore((state) => state.refreshCourse);
   const plans = usePlanStore((state) => state.plans);
   const activePlanId = usePlanStore((state) => state.activePlanId);
   const setPlanSessions = usePlanStore((state) => state.setPlanSessions);
@@ -148,7 +145,6 @@ function Home() {
     () => activePlanFromState({ plans, activePlanId }),
     [activePlanId, plans],
   );
-  const activeSessionsKey = activePlan.sessions.join(",");
   const [query, setQuery] = React.useState("");
   const debouncedQuery = useDebouncedValue(query, 100);
   const [filters, setFilters] =
@@ -161,9 +157,6 @@ function Home() {
   const searchCourseParam = search.course;
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [mobileTab, setMobileTab] = React.useState<"search" | "pinned">("search");
-  const [liveCourses, setLiveCourses] = React.useState<Map<string, Course>>(
-    () => new Map(),
-  );
   const [refreshingCourseKey, setRefreshingCourseKey] = React.useState<
     string | null
   >(null);
@@ -172,9 +165,7 @@ function Home() {
     [],
   );
 
-  React.useEffect(() => {
-    void loadCatalog(activePlan.sessions);
-  }, [activeSessionsKey, activePlan.sessions, loadCatalog]);
+  useCatalogForSessions(activePlan.sessions);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -215,10 +206,9 @@ function Home() {
     const map = new Map<string, Course>();
 
     catalog?.courses.forEach((course) => map.set(courseKey(course), course));
-    liveCourses.forEach((course, key) => map.set(key, course));
 
     return map;
-  }, [catalog, liveCourses]);
+  }, [catalog]);
   const graph = useRequisiteGraph(catalog?.courses);
   const resolveCourseKey = React.useCallback(
     (value: string): string | null => resolveKey(value, coursesByKey),
@@ -309,34 +299,14 @@ function Home() {
     [activePlan.sessions, catalog?.sessions, referenceSessions],
   );
 
-  async function refreshSeats(course: Course) {
+  async function refreshCourseData(course: Course) {
     const key = courseKey(course);
 
     setRefreshingCourseKey(key);
     setRefreshError(null);
 
     try {
-      const params = new URLSearchParams({ sectionCode: course.sectionCode });
-      const response = await fetch(`/api/course/${course.code}?${params.toString()}`);
-
-      if (!response.ok) {
-        throw new Error(`Refresh failed with HTTP ${response.status}`);
-      }
-
-      const liveCourse = extractLiveCourse(
-        (await response.json()) as TtbCourseLookupResponse,
-        course.sectionCode,
-      );
-
-      if (!liveCourse) {
-        throw new Error("Live course response did not include this offering");
-      }
-
-      setLiveCourses((current) => {
-        const next = new Map(current);
-        next.set(key, mergeLiveEnrolment(course, liveCourse));
-        return next;
-      });
+      await refreshCatalogCourse(course);
     } catch (refreshErrorValue) {
       setRefreshError(
         refreshErrorValue instanceof Error
@@ -560,7 +530,7 @@ function Home() {
           }}
           onPin={(course) => pinCourse(course.code, course.sectionCode)}
           onUnpin={(course) => unpinCourse(course.code, course.sectionCode)}
-          onRefresh={refreshSeats}
+          onRefresh={refreshCourseData}
           onOpenCourse={(code) => {
             const key = resolveCourseKey(code);
 
@@ -1181,9 +1151,19 @@ function PinnedCourseCard({
 }) {
   const teachMethods = course ? getTeachMethods(course.sections) : [];
   const courseKeyValue = pinnedKey(pinned);
+  const missingChoices = course
+    ? Object.entries(pinned.chosen).filter(
+        ([teachMethod, sectionName]) =>
+          Boolean(sectionName) &&
+          !course.sections.some(
+            (section) =>
+              section.teachMethod === teachMethod && section.name === sectionName,
+          ),
+      )
+    : [];
   const hasInvalidSelection = React.useMemo(() => {
     if (!course) {
-      return false;
+      return true;
     }
 
     return Object.entries(pinned.chosen).some(([teachMethod, sectionName]) => {
@@ -1198,7 +1178,7 @@ function PinnedCourseCard({
 
       return section
         ? linkageViolationKeys.has(selectedConflictKey(pinned, section))
-        : false;
+        : true;
     });
   }, [course, linkageViolationKeys, pinned]);
 
@@ -1240,6 +1220,12 @@ function PinnedCourseCard({
       </CardHeader>
       {course && (
         <CardContent className="space-y-3 px-4">
+          {missingChoices.length > 0 && (
+            <div className="rounded-md border border-amber-400/50 bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+              No longer offered: {missingChoices.map(([method, name]) => `${method} ${name}`).join(", ")}.
+              Choose a replacement from the course sheet.
+            </div>
+          )}
           {teachMethods.map((teachMethod) => {
             const selected = pinned.chosen[teachMethod] ?? null;
             const selectedSection = selected
@@ -1267,7 +1253,7 @@ function PinnedCourseCard({
             // invalid styling off that, but never let it block clearing.
             const chosenInvalid = selectedSection
               ? getSectionAvailability(selectedSection, selectedOthers).disabled
-              : false;
+              : Boolean(selected);
 
             return (
               <div key={teachMethod} className="space-y-1.5">
@@ -1277,7 +1263,9 @@ function PinnedCourseCard({
                     <span className="text-destructive">Conflict</span>
                   ) : (
                     chosenInvalid && (
-                      <span className="text-muted-foreground">Invalid</span>
+                      <span className="text-muted-foreground">
+                        {selected && !selectedSection ? "Unavailable" : "Invalid"}
+                      </span>
                     )
                   )}
                 </div>
@@ -1385,9 +1373,14 @@ function SectionCombobox({
                     · WL
                   </span>
                 )}
+                {isSectionFull(selectedSection) && (
+                  <span className="ml-1.5 font-medium text-destructive">
+                    · Full
+                  </span>
+                )}
               </>
             ) : (
-              "Auto — let generator choose"
+              value ? `${value} · unavailable` : "Auto — let generator choose"
             )}
           </span>
           <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
@@ -1461,6 +1454,11 @@ function SectionCombobox({
                         {isSectionWaitlisted(section) && (
                           <span className="ml-1.5 font-medium text-amber-700 dark:text-amber-400">
                             · WL
+                          </span>
+                        )}
+                        {isSectionFull(section) && (
+                          <span className="ml-1.5 font-medium text-destructive">
+                            · Full
                           </span>
                         )}
                         {conflict && (

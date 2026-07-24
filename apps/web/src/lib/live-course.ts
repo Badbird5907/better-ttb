@@ -1,8 +1,8 @@
-import type { Course, SectionCode, TtbCourseLookupResponse } from "@better-ttb/shared";
+import type { Course, TtbCourseLookupResponse } from "@better-ttb/shared";
 
 export function extractLiveCourse(
   response: TtbCourseLookupResponse,
-  sectionCode: SectionCode,
+  base: Pick<Course, "id" | "code" | "sectionCode" | "sessions">,
 ): Course | null {
   const payload = response.payload;
 
@@ -16,11 +16,29 @@ export function extractLiveCourse(
       ? [payload]
       : extractCoursesFromRecord(payload as Record<string, unknown>);
 
-  return (
-    candidates.find((course) => course.sectionCode === sectionCode) ??
-    candidates[0] ??
-    null
+  const matchingOfferings = candidates.filter(
+    (course) =>
+      course.code === base.code && course.sectionCode === base.sectionCode,
   );
+  const exactId = matchingOfferings.find((course) => course.id === base.id);
+
+  if (exactId) {
+    return exactId;
+  }
+
+  const exactSessions = matchingOfferings.filter((course) =>
+    sameSessions(course.sessions, base.sessions),
+  );
+
+  if (exactSessions.length === 1) {
+    return exactSessions[0] ?? null;
+  }
+
+  const overlappingSessions = matchingOfferings.filter((course) =>
+    course.sessions.some((session) => base.sessions.includes(session)),
+  );
+
+  return overlappingSessions.length === 1 ? overlappingSessions[0] ?? null : null;
 }
 
 function extractCoursesFromRecord(value: Record<string, unknown>): Course[] {
@@ -45,34 +63,13 @@ function extractCoursesFromRecord(value: Record<string, unknown>): Course[] {
   return [];
 }
 
-export function mergeLiveEnrolment(base: Course, live: Course): Course {
-  const liveSections = new Map(
-    live.sections.map((section) => [section.name, section]),
-  );
+function sameSessions(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
 
-  return {
-    ...base,
-    primaryFull: live.primaryFull,
-    primaryWaitlistable: live.primaryWaitlistable,
-    sections: base.sections.map((section) => {
-      const liveSection = liveSections.get(section.name);
-
-      if (!liveSection) {
-        return section;
-      }
-
-      return {
-        ...section,
-        currentEnrolment: liveSection.currentEnrolment,
-        maxEnrolment: liveSection.maxEnrolment,
-        currentWaitlist: liveSection.currentWaitlist,
-        waitlistInd: liveSection.waitlistInd,
-        cancelInd: liveSection.cancelInd,
-        enrolmentInd: liveSection.enrolmentInd,
-        openLimitInd: liveSection.openLimitInd,
-      };
-    }),
-  };
+  const rightSessions = new Set(right);
+  return left.every((session) => rightSessions.has(session));
 }
 
 function isCourse(value: unknown): value is Course {

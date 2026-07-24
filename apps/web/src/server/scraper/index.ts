@@ -11,6 +11,7 @@ const DEFAULT_MAX_PAGES = 40;
 const MAX_PAGES_PER_INVOCATION = 40;
 const REQUEST_DELAY_MS = 150;
 const CATALOG_DIVISION = "ARTSC";
+const SCHEDULED_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export interface RunScrapeChunkOptions {
   sessions: string[];
@@ -183,6 +184,35 @@ export async function runScrapeChunk(
     total: cursor.total,
     cursor,
   };
+}
+
+export async function runScheduledScrape(
+  options: RunScrapeChunkOptions,
+  deps: ScraperDeps,
+): Promise<ScrapeChunkResult | null> {
+  const sessions = normalizeSessions(options.sessions);
+  const cursor = await readCursor(deps.kv);
+
+  if (cursor && sameSessions(cursor.sessions, sessions)) {
+    return await runScrapeChunk(options, deps);
+  }
+
+  if (cursor) {
+    await deps.kv.delete(SCRAPE_CURSOR_KEY);
+  }
+
+  const rawMeta = await deps.kv.get(catalogMetaKey(sessions));
+  const scrapedAt = parseScrapedAt(rawMeta);
+  const now = deps.now?.() ?? new Date();
+
+  if (
+    scrapedAt !== null &&
+    now.getTime() - scrapedAt.getTime() < SCHEDULED_REFRESH_INTERVAL_MS
+  ) {
+    return null;
+  }
+
+  return await runScrapeChunk(options, deps);
 }
 
 export function catalogKey(sessions: string[]): string {
@@ -387,6 +417,25 @@ function parseCursor(value: unknown): ScrapeCursor | null {
     startedAt,
     ...(indicators ? { divisionalEnrolmentIndicators: indicators } : {}),
   };
+}
+
+function parseScrapedAt(value: string | null): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    if (!isRecord(parsed) || typeof parsed.scrapedAt !== "string") {
+      return null;
+    }
+
+    const date = new Date(parsed.scrapedAt);
+    return Number.isNaN(date.getTime()) ? null : date;
+  } catch {
+    return null;
+  }
 }
 
 function parseIndicatorsRecord(

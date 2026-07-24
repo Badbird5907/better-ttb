@@ -31,7 +31,7 @@ export const Route = createFileRoute("/api/catalog")({
         const etag = meta ? formatEtag(meta.etag) : undefined;
         const headers = new Headers({
           "Content-Type": "application/json",
-          "Cache-Control": "public, max-age=3600",
+          "Cache-Control": "public, max-age=0, must-revalidate",
         });
 
         if (etag) {

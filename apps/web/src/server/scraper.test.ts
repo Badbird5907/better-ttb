@@ -8,7 +8,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   catalogKey,
+  catalogMetaKey,
   runScrapeChunk,
+  runScheduledScrape,
   SCRAPE_CURSOR_KEY,
   type CatalogArtifact,
   type ScraperDatabase,
@@ -86,6 +88,97 @@ describe("runScrapeChunk", () => {
     const catalog = parseCatalog(kv.store.get(catalogKey(sessions)));
     expect(catalog.courses).toHaveLength(1);
     expect(catalog.courses[0]?.id).toBe(duplicate.id);
+  });
+
+  it("replaces the complete stored course payload on a later scrape", async () => {
+    const sessions = ["20269"];
+    const db = new MemoryD1();
+    const kv = new MemoryKv();
+    const original = makeCourse(1);
+
+    await runScrapeChunk(
+      { sessions, maxPages: 1 },
+      makeDeps(db, kv, createPageFetch([makePage([original], 1, 1)])),
+    );
+
+    const updated = structuredClone(original) as Course;
+    updated.sections[0]!.instructors = [{ firstName: "New", lastName: "Lecturer" }];
+    updated.sections[0]!.meetingTimes = [];
+    updated.sections.push({
+      ...structuredClone(updated.sections[0]!),
+      name: "TUT0201",
+      teachMethod: "TUT",
+      sectionNumber: "0201",
+    });
+
+    await runScrapeChunk(
+      { sessions, maxPages: 1 },
+      makeDeps(db, kv, createPageFetch([makePage([updated], 1, 1)])),
+    );
+
+    const catalog = parseCatalog(kv.store.get(catalogKey(sessions)));
+    expect(catalog.courses[0]?.sections).toHaveLength(2);
+    expect(catalog.courses[0]?.sections[0]).toMatchObject({
+      instructors: [{ firstName: "New", lastName: "Lecturer" }],
+      meetingTimes: [],
+    });
+  });
+
+  it("skips a scheduled scrape while the published catalog is fresh", async () => {
+    const sessions = ["20269"];
+    const db = new MemoryD1();
+    const kv = new MemoryKv();
+    kv.store.set(
+      catalogMetaKey(sessions),
+      JSON.stringify({
+        etag: "1",
+        scrapedAt: "2026-07-10T12:00:00.000Z",
+        total: 1,
+      }),
+    );
+    const fetchImpl: typeof fetch = async () => {
+      throw new Error("Fresh scheduled scrape should not fetch");
+    };
+
+    const result = await runScheduledScrape(
+      { sessions },
+      {
+        ...makeDeps(db, kv, fetchImpl),
+        now: () => new Date("2026-07-11T11:59:59.000Z"),
+      },
+    );
+
+    expect(result).toBeNull();
+    expect(db.runs.size).toBe(0);
+  });
+
+  it("starts a scheduled scrape when the catalog is at least 24 hours old", async () => {
+    const sessions = ["20269"];
+    const db = new MemoryD1();
+    const kv = new MemoryKv();
+    kv.store.set(
+      catalogMetaKey(sessions),
+      JSON.stringify({
+        etag: "1",
+        scrapedAt: "2026-07-10T12:00:00.000Z",
+        total: 1,
+      }),
+    );
+
+    const result = await runScheduledScrape(
+      { sessions, maxPages: 1 },
+      {
+        ...makeDeps(
+          db,
+          kv,
+          createPageFetch([makePage([makeCourse(1)], 1, 1)]),
+        ),
+        now: () => new Date("2026-07-11T12:00:00.000Z"),
+      },
+    );
+
+    expect(result?.status).toBe("complete");
+    expect(db.runs.size).toBe(1);
   });
 
   it("accumulates divisionalEnrolmentIndicators into the catalog artifact", async () => {

@@ -66,12 +66,16 @@ Note: deploy must go through the `alchemy` CLI (the pnpm script does), not plain
 `tsx alchemy.run.ts` — the CLI generates `.alchemy/local/wrangler.jsonc`, which
 the Alchemy Vite plugin requires during the build.
 After the first deploy the catalog is empty — populate it by calling the admin
-scrape endpoint (also run daily by the configured cron):
+scrape endpoint (the configured hourly cron also resumes active scrapes and
+starts a new scrape when the published catalog is at least 24 hours old):
 
 ```sh
 curl -X POST https://<your-worker>/api/admin/scrape \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
+
+The endpoint processes at most 40 pages per call. If the response has
+`"status":"running"`, repeat the request until it returns `"status":"complete"`.
 
 ## Architecture
 

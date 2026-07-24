@@ -1,5 +1,12 @@
 import type { Section } from "./ttb-api";
 
+export function isSectionFull(section: Section): boolean {
+  return (
+    section.maxEnrolment > 0 &&
+    section.currentEnrolment >= section.maxEnrolment
+  );
+}
+
 /**
  * Whether enrolling in `section` right now would place you on a waitlist.
  *
@@ -11,7 +18,6 @@ import type { Section } from "./ttb-api";
 export function isSectionWaitlisted(section: Section): boolean {
   return (
     section.waitlistInd === "Y" &&
-    section.maxEnrolment > 0 &&
-    section.currentEnrolment >= section.maxEnrolment
+    isSectionFull(section)
   );
 }

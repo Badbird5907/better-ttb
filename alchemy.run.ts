@@ -32,7 +32,7 @@ export const web = await TanStackStart("web", {
     SESSIONS: "20269,20271,20269-20271",
     ADMIN_TOKEN: alchemy.secret(process.env.ADMIN_TOKEN ?? "dev-admin-token"),
   },
-  crons: ["0 8 * * *"],
+  crons: ["0 * * * *"],
   domains: [
     {
       domainName: "ttb.evanyu.dev",

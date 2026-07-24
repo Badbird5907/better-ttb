@@ -1,7 +1,12 @@
-import type { Course, DivisionalEnrolmentIndicators } from "@better-ttb/shared";
+import type {
+  Course,
+  DivisionalEnrolmentIndicators,
+  TtbCourseLookupResponse,
+} from "@better-ttb/shared";
 import { create } from "zustand";
 
 import { getCatalogCache, putCatalogCache } from "@/lib/idb";
+import { extractLiveCourse } from "@/lib/live-course";
 import { getCourseLevel } from "@/lib/search";
 
 export type CatalogStatus = "idle" | "loading" | "ready" | "empty" | "error";
@@ -29,8 +34,12 @@ interface CatalogState {
   departments: CatalogDepartment[];
   levels: string[];
   divisionalEnrolmentIndicators: DivisionalEnrolmentIndicators;
+  lastCheckedAt: string | null;
   loadCatalog: (sessions: string[]) => Promise<void>;
+  refreshCourse: (course: Course) => Promise<Course>;
 }
+
+const catalogLoads = new Map<string, Promise<void>>();
 
 export const useCatalogStore = create<CatalogState>((set, get) => ({
   status: "idle",
@@ -41,16 +50,132 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   departments: [],
   levels: [],
   divisionalEnrolmentIndicators: {},
-  loadCatalog: async (sessions) => {
+  lastCheckedAt: null,
+  loadCatalog: (sessions) => {
     const normalizedSessions = normalizeSessions(sessions);
     const key = normalizedSessions.join(",");
-    const cached = await readCachedCatalog(key);
+    const existing = catalogLoads.get(key);
 
-    if (cached) {
-      setCatalogReady(set, cached.body, cached.etag, key, null);
-    } else if (get().sessionsKey !== key || get().status === "idle") {
+    if (existing) {
+      return existing;
+    }
+
+    const load = loadCatalog(normalizedSessions, key, set, get).finally(() => {
+      catalogLoads.delete(key);
+    });
+    catalogLoads.set(key, load);
+    return load;
+  },
+  refreshCourse: async (course) => {
+    const params = new URLSearchParams({ sectionCode: course.sectionCode });
+    const response = await fetch(`/api/course/${course.code}?${params.toString()}`, {
+      cache: "no-cache",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Refresh failed with HTTP ${response.status}`);
+    }
+
+    const liveCourse = extractLiveCourse(
+      (await response.json()) as TtbCourseLookupResponse,
+      course,
+    );
+
+    if (!liveCourse) {
+      throw new Error("Live course response did not include an unambiguous matching offering");
+    }
+
+    const current = get();
+    const catalog = current.catalog;
+
+    if (!catalog) {
+      throw new Error("Cannot refresh a course before its catalog is loaded");
+    }
+
+    let replaced = false;
+    const courses = catalog.courses.map((candidate) => {
+      if (sameOffering(candidate, course)) {
+        replaced = true;
+        return liveCourse;
+      }
+
+      return candidate;
+    });
+
+    if (!replaced) {
+      throw new Error("The refreshed offering is not present in the loaded catalog");
+    }
+
+    setCatalogReady(
+      set,
+      { ...catalog, courses },
+      current.etag,
+      current.sessionsKey ?? normalizeSessions(course.sessions).join(","),
+      null,
+    );
+    return liveCourse;
+  },
+}));
+
+async function loadCatalog(
+  normalizedSessions: string[],
+  key: string,
+  set: (partial: Partial<CatalogState>) => void,
+  get: () => CatalogState,
+): Promise<void> {
+  const currentAtStart = get();
+  const hasCurrentCatalog =
+    currentAtStart.sessionsKey === key && currentAtStart.catalog !== null;
+  const cached = await readCachedCatalog(key);
+
+  if (cached && !hasCurrentCatalog) {
+    setCatalogReady(set, cached.body, cached.etag, key, null);
+  } else if (!hasCurrentCatalog && !cached) {
+    set({
+      status: "loading",
+      catalog: null,
+      etag: null,
+      error: null,
+      sessionsKey: key,
+      departments: [],
+      levels: [],
+      divisionalEnrolmentIndicators: {},
+    });
+  }
+
+  try {
+    const response = await fetchCatalog(
+      normalizedSessions,
+      get().sessionsKey === key ? get().etag : cached?.etag ?? null,
+    );
+
+    if (response.status === 304) {
+      const current = get();
+
+      if (current.sessionsKey !== key) {
+        return;
+      }
+
+      if (cached || (current.catalog && current.sessionsKey === key)) {
+        set({
+          status: "ready",
+          error: null,
+          sessionsKey: key,
+          lastCheckedAt: new Date().toISOString(),
+        });
+        return;
+      }
+
+      throw new Error("Catalog was not modified but no cached catalog exists");
+    }
+
+    if (response.status === 404) {
+      if (get().sessionsKey !== key) {
+        return;
+      }
+
       set({
-        status: "loading",
+        status: "empty",
         catalog: null,
         etag: null,
         error: null,
@@ -58,75 +183,50 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
         departments: [],
         levels: [],
         divisionalEnrolmentIndicators: {},
+        lastCheckedAt: new Date().toISOString(),
       });
+      return;
     }
 
-    try {
-      const response = await fetchCatalog(normalizedSessions, cached?.etag ?? null);
-
-      if (response.status === 304) {
-        const current = get();
-
-        if (cached || (current.catalog && current.sessionsKey === key)) {
-          set({
-            status: "ready",
-            error: null,
-            sessionsKey: key,
-          });
-          return;
-        }
-
-        throw new Error("Catalog was not modified but no cached catalog exists");
-      }
-
-      if (response.status === 404) {
-        set({
-          status: "empty",
-          catalog: null,
-          etag: null,
-          error: null,
-          sessionsKey: key,
-          departments: [],
-          levels: [],
-          divisionalEnrolmentIndicators: {},
-        });
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error(`Catalog request failed with HTTP ${response.status}`);
-      }
-
-      const body = parseCatalogArtifact(await response.json());
-      const etag = response.headers.get("ETag");
-      await putCatalogCache<CatalogArtifact>({
-        key,
-        etag,
-        body,
-        updatedAt: new Date().toISOString(),
-      });
-      setCatalogReady(set, body, etag, key, null);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-
-      if (cached) {
-        set({ status: "ready", error: message, sessionsKey: key });
-        return;
-      }
-
-      set({
-        status: "error",
-        catalog: null,
-        etag: null,
-        error: message,
-        sessionsKey: key,
-        departments: [],
-        levels: [],
-        divisionalEnrolmentIndicators: {},
-      });
+    if (!response.ok) {
+      throw new Error(`Catalog request failed with HTTP ${response.status}`);
     }
-  },
-}));
+
+    const body = parseCatalogArtifact(await response.json());
+    const etag = response.headers.get("ETag");
+    await putCatalogCache<CatalogArtifact>({
+      key,
+      etag,
+      body,
+      updatedAt: new Date().toISOString(),
+    });
+
+    if (get().sessionsKey !== key) {
+      return;
+    }
+
+    setCatalogReady(set, body, etag, key, null);
+    set({ lastCheckedAt: new Date().toISOString() });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (cached || (get().catalog && get().sessionsKey === key)) {
+      set({ status: "ready", error: message, sessionsKey: key });
+      return;
+    }
+
+    set({
+      status: "error",
+      catalog: null,
+      etag: null,
+      error: message,
+      sessionsKey: key,
+      departments: [],
+      levels: [],
+      divisionalEnrolmentIndicators: {},
+    });
+  }
+}
 
 function fetchCatalog(sessions: string[], etag: string | null): Promise<Response> {
   const params = new URLSearchParams({ sessions: sessions.join(",") });
@@ -136,7 +236,10 @@ function fetchCatalog(sessions: string[], etag: string | null): Promise<Response
     headers.set("If-None-Match", etag);
   }
 
-  return fetch(`/api/catalog?${params.toString()}`, { headers });
+  return fetch(`/api/catalog?${params.toString()}`, {
+    headers,
+    cache: "no-cache",
+  });
 }
 
 async function readCachedCatalog(
@@ -217,6 +320,23 @@ function normalizeSessions(sessions: string[]): string[] {
   return sessions
     .map((session) => session.trim())
     .filter((session) => session.length > 0);
+}
+
+function sameOffering(left: Course, right: Course): boolean {
+  if (left.id === right.id) {
+    return true;
+  }
+
+  if (left.code !== right.code || left.sectionCode !== right.sectionCode) {
+    return false;
+  }
+
+  if (left.sessions.length !== right.sessions.length) {
+    return false;
+  }
+
+  const rightSessions = new Set(right.sessions);
+  return left.sessions.every((session) => rightSessions.has(session));
 }
 
 function parseCatalogArtifact(value: unknown): CatalogArtifact {

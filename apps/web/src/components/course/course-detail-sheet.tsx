@@ -8,7 +8,7 @@ import type {
   SectionCode,
   TeachMethod,
 } from "@better-ttb/shared";
-import { formatDay, millisofdayToHHMM } from "@better-ttb/shared";
+import { formatDay, isSectionFull, millisofdayToHHMM } from "@better-ttb/shared";
 import { ChevronDown, ChevronRight, Pin, PinOff, RefreshCw } from "lucide-react";
 import * as React from "react";
 
@@ -146,7 +146,7 @@ export function CourseDetailSheet({
                     disabled={refreshing}
                   >
                     <RefreshCw className={cn(refreshing && "animate-spin")} />
-                    Refresh seats
+                    Refresh course
                   </Button>
                   <Button
                     type="button"
@@ -614,6 +614,11 @@ function SectionRow({
             {isSectionWaitlisted(section) && (
               <Badge variant="outline" className="text-[10px] px-1 py-0 font-normal text-amber-700 dark:text-amber-400">
                 WL
+              </Badge>
+            )}
+            {isSectionFull(section) && (
+              <Badge variant="destructive" className="px-1 py-0 text-[10px] font-normal">
+                Full
               </Badge>
             )}
           </span>

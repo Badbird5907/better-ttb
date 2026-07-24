@@ -4,7 +4,6 @@ import type {
   Course,
   SectionCode,
   TeachMethod,
-  TtbCourseLookupResponse,
 } from "@better-ttb/shared";
 import {
   Check,
@@ -18,10 +17,7 @@ import * as React from "react";
 import { AppHeader } from "@/components/app-header";
 import { MobileNav } from "@/components/app-nav";
 import { CourseDetailSheet } from "@/components/course/course-detail-sheet";
-import {
-  extractLiveCourse,
-  mergeLiveEnrolment,
-} from "@/lib/live-course";
+import { useCatalogForSessions } from "@/lib/use-catalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -99,7 +95,7 @@ function TreeRoute() {
   const navigate = useNavigate({ from: Route.fullPath });
   const catalog = useCatalogStore((state) => state.catalog);
   const status = useCatalogStore((state) => state.status);
-  const loadCatalog = useCatalogStore((state) => state.loadCatalog);
+  const refreshCatalogCourse = useCatalogStore((state) => state.refreshCourse);
   const plans = usePlanStore((state) => state.plans);
   const activePlanId = usePlanStore((state) => state.activePlanId);
   const pinCourse = usePlanStore((state) => state.pin);
@@ -110,20 +106,12 @@ function TreeRoute() {
     () => activePlanFromState({ plans, activePlanId }),
     [activePlanId, plans],
   );
-  const activeSessionsKey = activePlan.sessions.join(",");
-
-  React.useEffect(() => {
-    void loadCatalog(activePlan.sessions);
-  }, [activePlan.sessions, activeSessionsKey, loadCatalog]);
+  useCatalogForSessions(activePlan.sessions);
 
   const graph = useRequisiteGraph(catalog?.courses);
 
-  // Live seat overrides + the in-page course sheet state. Deliberately NOT tied
-  // to the `?course=` URL param (which drives tree focus, not the sheet) — the
-  // build page has a reopen bug from coupling sheet state to the URL.
-  const [liveCourses, setLiveCourses] = React.useState<Map<string, Course>>(
-    () => new Map(),
-  );
+  // In-page course sheet state is deliberately not tied to the `?course=` URL
+  // param, which drives tree focus rather than sheet visibility.
   const [refreshingCourseKey, setRefreshingCourseKey] = React.useState<
     string | null
   >(null);
@@ -136,10 +124,9 @@ function TreeRoute() {
     const map = new Map<string, Course>();
 
     catalog?.courses.forEach((course) => map.set(courseKey(course), course));
-    liveCourses.forEach((course, key) => map.set(key, course));
 
     return map;
-  }, [catalog, liveCourses]);
+  }, [catalog]);
   const resolveCourseKey = React.useCallback(
     (value: string): string | null => resolveKey(value, coursesByKey),
     [coursesByKey],
@@ -152,7 +139,7 @@ function TreeRoute() {
     [activePlan, coursesByKey],
   );
 
-  const refreshSeats = React.useCallback(
+  const refreshCourseData = React.useCallback(
     async (course: Course) => {
       const key = courseKey(course);
 
@@ -160,29 +147,7 @@ function TreeRoute() {
       setRefreshError(null);
 
       try {
-        const params = new URLSearchParams({ sectionCode: course.sectionCode });
-        const response = await fetch(
-          `/api/course/${course.code}?${params.toString()}`,
-        );
-
-        if (!response.ok) {
-          throw new Error(`Refresh failed with HTTP ${response.status}`);
-        }
-
-        const liveCourse = extractLiveCourse(
-          (await response.json()) as TtbCourseLookupResponse,
-          course.sectionCode,
-        );
-
-        if (!liveCourse) {
-          throw new Error("Live course response did not include this offering");
-        }
-
-        setLiveCourses((current) => {
-          const next = new Map(current);
-          next.set(key, mergeLiveEnrolment(course, liveCourse));
-          return next;
-        });
+        await refreshCatalogCourse(course);
       } catch (refreshErrorValue) {
         setRefreshError(
           refreshErrorValue instanceof Error
@@ -193,7 +158,7 @@ function TreeRoute() {
         setRefreshingCourseKey(null);
       }
     },
-    [],
+    [refreshCatalogCourse],
   );
 
   const openSheetForCode = React.useCallback(
@@ -329,7 +294,7 @@ function TreeRoute() {
         }}
         onPin={(course) => pinCourse(course.code, course.sectionCode)}
         onUnpin={(course) => unpinCourse(course.code, course.sectionCode)}
-        onRefresh={refreshSeats}
+        onRefresh={refreshCourseData}
         onOpenCourse={(code) => {
           // Re-focus the tree on the clicked requisite, and keep the sheet open
           // on that course when we can resolve it; otherwise just move focus and

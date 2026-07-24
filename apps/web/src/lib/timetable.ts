@@ -83,6 +83,58 @@ export function courseKey(course: Pick<Course, "code" | "sectionCode">): string 
   return `${course.code}:${course.sectionCode}`;
 }
 
+export interface PlanSelectionIssue {
+  kind: "missing-course" | "missing-section";
+  courseCode: string;
+  sectionCode: SectionCode;
+  teachMethod?: TeachMethod;
+  sectionName?: string;
+}
+
+export function findPlanSelectionIssues(
+  plan: Plan,
+  coursesByKey: Map<string, Course>,
+): PlanSelectionIssue[] {
+  return plan.pinned.flatMap((pinned) => {
+    const course = coursesByKey.get(pinnedKey(pinned));
+
+    if (!course) {
+      return [
+        {
+          kind: "missing-course" as const,
+          courseCode: pinned.courseCode,
+          sectionCode: pinned.sectionCode,
+        },
+      ];
+    }
+
+    return Object.entries(pinned.chosen).flatMap(
+      ([teachMethod, sectionName]): PlanSelectionIssue[] => {
+        if (!sectionName) {
+          return [];
+        }
+
+        const exists = course.sections.some(
+          (section) =>
+            section.teachMethod === teachMethod && section.name === sectionName,
+        );
+
+        return exists
+          ? []
+          : [
+              {
+                kind: "missing-section",
+                courseCode: pinned.courseCode,
+                sectionCode: pinned.sectionCode,
+                teachMethod,
+                sectionName,
+              },
+            ];
+      },
+    );
+  });
+}
+
 export function getActivePlanCourses(
   plan: Plan,
   coursesByKey: Map<string, Course>,

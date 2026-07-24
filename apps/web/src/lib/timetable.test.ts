@@ -8,16 +8,54 @@ import type {
 } from "@better-ttb/shared";
 import { describe, expect, it } from "vitest";
 
-import type { PinnedCourse } from "@/stores/plan";
+import type { PinnedCourse, Plan } from "@/stores/plan";
 
 import {
   buildTermBlocks,
   detectLinkageViolationSectionKeys,
+  findPlanSelectionIssues,
   sectionConflictsWithPlan,
   selectedSectionKey,
   type PlanSelectedSection,
   type SelectedTimetableSection,
 } from "./timetable";
+
+describe("findPlanSelectionIssues", () => {
+  it("reports removed sections without changing the saved plan", () => {
+    const plan: Plan = {
+      id: "plan",
+      name: "Plan",
+      sessions: ["20271"],
+      prefs: {},
+      pinned: [
+        {
+          courseCode: "PHY132H1",
+          sectionCode: "S",
+          chosen: { PRA: "PRA0101" },
+        },
+      ],
+    };
+    const course = {
+      id: "winter-id",
+      code: "PHY132H1",
+      sectionCode: "S",
+      sections: [section("PRA", "PRA0201")],
+    } as unknown as Course;
+
+    expect(
+      findPlanSelectionIssues(plan, new Map([["PHY132H1:S", course]])),
+    ).toEqual([
+      {
+        kind: "missing-section",
+        courseCode: "PHY132H1",
+        sectionCode: "S",
+        teachMethod: "PRA",
+        sectionName: "PRA0101",
+      },
+    ]);
+    expect(plan.pinned[0]?.chosen.PRA).toBe("PRA0101");
+  });
+});
 
 describe("sectionConflictsWithPlan", () => {
   it("does not flag an F section against an S section at the same time", () => {

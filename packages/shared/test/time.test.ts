@@ -5,11 +5,27 @@ import {
   YEAR,
   formatDay,
   formatSessionLabel,
+  isSectionFull,
   meetingTimesOverlap,
   millisofdayToHHMM,
   parseSessionCode,
 } from "../src";
 import type { MeetingTime } from "../src";
+import type { Section } from "../src";
+
+describe("isSectionFull", () => {
+  it("does not treat an unknown zero-capacity section as full", () => {
+    expect(
+      isSectionFull({ currentEnrolment: 0, maxEnrolment: 0 } as Section),
+    ).toBe(false);
+  });
+
+  it("treats enrolment at capacity as full", () => {
+    expect(
+      isSectionFull({ currentEnrolment: 36, maxEnrolment: 36 } as Section),
+    ).toBe(true);
+  });
+});
 
 const meeting = (day: 1 | 2 | 3 | 4 | 5 | 6 | 7, start: number, end: number): MeetingTime => ({
   start: { day, millisofday: start },

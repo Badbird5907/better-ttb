@@ -14,7 +14,6 @@ import type {
   Section,
   SectionCode,
   TeachMethod,
-  TtbCourseLookupResponse,
 } from "@better-ttb/shared";
 import { isSectionWaitlisted, millisofdayToHHMM } from "@better-ttb/shared";
 import {
@@ -110,7 +109,6 @@ import {
   type RuleKind,
 } from "@/lib/generator-prefs";
 import { buildIcsCalendar } from "@/lib/ics";
-import { extractLiveCourse, mergeLiveEnrolment } from "@/lib/live-course";
 import { parsePlanJson } from "@/lib/plan-io";
 import { useRequisiteGraph } from "@/lib/requisites/use-graph";
 import {
@@ -122,6 +120,7 @@ import {
   courseKey,
   daysOnCampusCount,
   detectLinkageViolationSectionKeys,
+  findPlanSelectionIssues,
   getActivePlanCourses,
   pinnedKey,
   planSelectedFromTimetableSections,
@@ -135,6 +134,7 @@ import {
   type TimetableBlock,
 } from "@/lib/timetable";
 import { cn } from "@/lib/utils";
+import { useCatalogForSessions } from "@/lib/use-catalog";
 import { useCatalogStore } from "@/stores/catalog";
 import {
   activePlanFromState,
@@ -189,7 +189,7 @@ function TimetableRoute() {
   const status = useCatalogStore((state) => state.status);
   const catalog = useCatalogStore((state) => state.catalog);
   const catalogError = useCatalogStore((state) => state.error);
-  const loadCatalog = useCatalogStore((state) => state.loadCatalog);
+  const refreshCatalogCourse = useCatalogStore((state) => state.refreshCourse);
   const plans = usePlanStore((state) => state.plans);
   const activePlanId = usePlanStore((state) => state.activePlanId);
   const choose = usePlanStore((state) => state.choose);
@@ -210,9 +210,6 @@ function TimetableRoute() {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [blockoutMode, setBlockoutMode] = React.useState(false);
   const [selectedCourseKey, setSelectedCourseKey] = React.useState<string | null>(null);
-  const [liveCourses, setLiveCourses] = React.useState<Map<string, Course>>(
-    () => new Map(),
-  );
   const [refreshingCourseKey, setRefreshingCourseKey] = React.useState<
     string | null
   >(null);
@@ -225,11 +222,7 @@ function TimetableRoute() {
   const [slotPicker, setSlotPicker] = React.useState<SlotPickerState | null>(null);
   const importInputRef = React.useRef<HTMLInputElement | null>(null);
   const workerRef = React.useRef<Worker | null>(null);
-  const activeSessionsKey = activePlan.sessions.join(",");
-
-  React.useEffect(() => {
-    void loadCatalog(activePlan.sessions);
-  }, [activePlan.sessions, activeSessionsKey, loadCatalog]);
+  useCatalogForSessions(activePlan.sessions);
 
   React.useEffect(
     () => () => {
@@ -271,10 +264,13 @@ function TimetableRoute() {
     const map = new Map<string, Course>();
 
     catalog?.courses.forEach((course) => map.set(courseKey(course), course));
-    liveCourses.forEach((course, key) => map.set(key, course));
     return map;
-  }, [catalog, liveCourses]);
+  }, [catalog]);
   const graph = useRequisiteGraph(catalog?.courses);
+  const planSelectionIssues = React.useMemo(
+    () => findPlanSelectionIssues(activePlan, coursesByKey),
+    [activePlan, coursesByKey],
+  );
   const activeCourses = React.useMemo(
     () => getActivePlanCourses(activePlan, coursesByKey),
     [activePlan, coursesByKey],
@@ -391,34 +387,14 @@ function TimetableRoute() {
     }));
   }
 
-  async function refreshSeats(course: Course) {
+  async function refreshCourseData(course: Course) {
     const key = courseKey(course);
 
     setRefreshingCourseKey(key);
     setRefreshError(null);
 
     try {
-      const params = new URLSearchParams({ sectionCode: course.sectionCode });
-      const response = await fetch(`/api/course/${course.code}?${params.toString()}`);
-
-      if (!response.ok) {
-        throw new Error(`Refresh failed with HTTP ${response.status}`);
-      }
-
-      const liveCourse = extractLiveCourse(
-        (await response.json()) as TtbCourseLookupResponse,
-        course.sectionCode,
-      );
-
-      if (!liveCourse) {
-        throw new Error("Live course response did not include this offering");
-      }
-
-      setLiveCourses((current) => {
-        const next = new Map(current);
-        next.set(key, mergeLiveEnrolment(course, liveCourse));
-        return next;
-      });
+      await refreshCatalogCourse(course);
     } catch (refreshErrorValue) {
       setRefreshError(
         refreshErrorValue instanceof Error
@@ -853,6 +829,13 @@ function TimetableRoute() {
                   Invalid selections detected. Some chosen sections must be taken together with a different lecture or tutorial — greyed blocks show which.
                 </Banner>
               )}
+              {planSelectionIssues.length > 0 && (
+                <Banner tone="warn">
+                  {planSelectionIssues.length} saved section selection
+                  {planSelectionIssues.length === 1 ? " is" : "s are"} no longer available.
+                  Choose a replacement before generating or exporting this plan.
+                </Banner>
+              )}
               {previewCandidate && (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed bg-background p-3">
                   <div>
@@ -1034,7 +1017,7 @@ function TimetableRoute() {
           }}
           onPin={(course) => pinCourse(course.code, course.sectionCode)}
           onUnpin={(course) => unpinCourse(course.code, course.sectionCode)}
-          onRefresh={refreshSeats}
+          onRefresh={refreshCourseData}
           onOpenCourse={(code) => {
             const resolved = resolveCourseKey(code, coursesByKey);
             if (resolved) {

@@ -1,7 +1,7 @@
 import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
 
 import type { Env } from "./server/env";
-import { createWorkerScraperDeps, runScrapeChunk } from "./server/scraper";
+import { createWorkerScraperDeps, runScheduledScrape } from "./server/scraper";
 
 const start = createServerEntry({
   fetch(request) {
@@ -15,10 +15,30 @@ export default {
   },
   scheduled(_controller, env, ctx) {
     ctx.waitUntil(
-      runScrapeChunk(
+      runScheduledScrape(
         { sessions: parseSessions(env.SESSIONS) },
         createWorkerScraperDeps(env),
-      ).then(() => undefined),
+      )
+        .then((result) => {
+          if (result === null) {
+            console.info(
+              "Catalog scrape skipped because the published catalog is fresh",
+            );
+            return;
+          }
+
+          console.info("Catalog scrape chunk finished", {
+            status: result.status,
+            pagesDone: result.pagesDone,
+            total: result.total,
+            nextPage: result.cursor?.page ?? null,
+            runId: result.cursor?.runId ?? null,
+          });
+        })
+        .catch((error: unknown) => {
+          console.error("Catalog scrape chunk failed", error);
+          throw error;
+        }),
     );
   },
 } satisfies ExportedHandler<Env>;
