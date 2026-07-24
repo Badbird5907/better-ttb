@@ -220,12 +220,12 @@ function SharedPlanRoute() {
               </div>
             </section>
 
-            <div className="grid gap-4 xl:grid-cols-2">
-              <section className="space-y-2">
+            <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+              <section className="min-w-0 space-y-2">
                 <h3 className="text-sm font-medium">Fall</h3>
                 <WeekGrid blocks={fall.blocks} />
               </section>
-              <section className="space-y-2">
+              <section className="min-w-0 space-y-2">
                 <h3 className="text-sm font-medium">Winter</h3>
                 <WeekGrid blocks={winter.blocks} />
               </section>
