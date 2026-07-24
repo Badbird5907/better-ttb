@@ -136,7 +136,7 @@ function SharedPlanRoute() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-background text-foreground">
+    <main className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b px-4">
         <div className="flex min-w-0 items-center gap-4">
           <div className="flex items-center gap-2">
@@ -159,7 +159,7 @@ function SharedPlanRoute() {
         </div>
       </header>
 
-      <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 p-4 pb-16 md:pb-4">
+      <section className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-5 overflow-y-auto p-4 pb-16 md:pb-4">
         {loading && <p className="text-sm text-muted-foreground">Loading shared plan.</p>}
         {error && <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
         {plan && (
