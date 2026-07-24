@@ -804,7 +804,7 @@ function TimetableRoute() {
           }
         >
           <section className="min-h-0 overflow-y-auto bg-muted/20 p-4">
-            <div className="mx-auto flex max-w-7xl flex-col gap-4">
+            <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <h2 className="text-lg font-semibold">Timetable</h2>

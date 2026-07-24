@@ -82,6 +82,9 @@ export function WeekGrid({
   const gridTemplateColumns = compact
     ? `repeat(${days.length}, minmax(0, 1fr))`
     : `56px repeat(${days.length}, minmax(128px, 1fr))`;
+  const fluidGridTemplateColumns = compact
+    ? gridTemplateColumns
+    : `56px repeat(${days.length}, minmax(0, 1fr))`;
   // Non-compact grids can be wider than a phone; allow horizontal scrolling with
   // a sensible minimum so day columns keep a usable width instead of collapsing.
   const minWidth = compact ? undefined : `${56 + days.length * 128}px`;
@@ -168,32 +171,40 @@ export function WeekGrid({
         // `isolate` keeps the grid's internal z-indexed blocks from escaping to
         // paint over sticky ancestors (e.g. the Generate panel header).
         "isolate rounded-md border bg-background",
-        compact ? "overflow-hidden rounded-sm text-[8px]" : "overflow-x-auto",
+        compact ? "overflow-hidden rounded-sm text-[8px]" : "overflow-x-auto md:overflow-x-visible",
         className,
       )}
+      style={
+        {
+          "--week-grid-columns": gridTemplateColumns,
+          "--week-grid-fluid-columns": fluidGridTemplateColumns,
+          "--week-grid-min-width": minWidth,
+        } as React.CSSProperties
+      }
     >
-      <div style={{ minWidth }}>
-      <div
-        className="grid border-b bg-muted/50"
-        style={{ gridTemplateColumns }}
-      >
-        {!compact && <div className="sticky left-0 z-40 bg-muted/50" />}
-        {days.map((day) => (
-          <div
-            key={day}
-            className={cn(
-              "border-l px-2 py-2 text-center text-xs font-medium",
-              compact && "border-l-0 px-0 py-0.5 text-[7px] leading-none",
-            )}
-          >
-            {compact ? formatDay(day).charAt(0) : formatDay(day)}
-          </div>
-        ))}
-      </div>
+      <div className={cn(!compact && "min-w-[var(--week-grid-min-width)] md:min-w-0")}>
+        <div
+          className="grid border-b bg-muted/50 [grid-template-columns:var(--week-grid-columns)] md:[grid-template-columns:var(--week-grid-fluid-columns)]"
+        >
+          {!compact && <div className="sticky left-0 z-40 bg-muted/50" />}
+          {days.map((day) => (
+            <div
+              key={day}
+              className={cn(
+                "border-l px-2 py-2 text-center text-xs font-medium",
+                compact && "border-l-0 px-0 py-0.5 text-[7px] leading-none",
+              )}
+            >
+              {compact ? formatDay(day).charAt(0) : formatDay(day)}
+            </div>
+          ))}
+        </div>
 
       <div
-        className="grid"
-        style={{ gridTemplateColumns, gridTemplateRows: `${height}px` }}
+        className="grid [grid-template-columns:var(--week-grid-columns)] md:[grid-template-columns:var(--week-grid-fluid-columns)]"
+        style={{
+          gridTemplateRows: `${height}px`,
+        }}
       >
         {!compact && (
           <div className="relative sticky left-0 z-40 bg-muted/20" style={{ height }}>
