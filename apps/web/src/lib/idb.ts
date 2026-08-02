@@ -7,6 +7,7 @@ export interface IdbCatalogEntry<TBody> {
   etag: string | null;
   body: TBody;
   updatedAt: string;
+  deltaCursor?: CatalogDeltaCursor;
 }
 
 export async function getCatalogCache<TBody>(
@@ -63,3 +64,4 @@ function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
     request.onsuccess = () => resolve(request.result);
   });
 }
+import type { CatalogDeltaCursor } from "@better-ttb/shared";

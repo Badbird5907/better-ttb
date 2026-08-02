@@ -22,6 +22,7 @@ import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiCatalogRouteImport } from './routes/api/catalog'
 import { Route as ApiShareIdRouteImport } from './routes/api/share.$id'
 import { Route as ApiCourseCodeRouteImport } from './routes/api/course.$code'
+import { Route as ApiCatalogUpdatesRouteImport } from './routes/api/catalog.updates'
 import { Route as ApiAdminScrapeRouteImport } from './routes/api/admin.scrape'
 
 const TreeRoute = TreeRouteImport.update({
@@ -89,6 +90,11 @@ const ApiCourseCodeRoute = ApiCourseCodeRouteImport.update({
   path: '/api/course/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCatalogUpdatesRoute = ApiCatalogUpdatesRouteImport.update({
+  id: '/updates',
+  path: '/updates',
+  getParentRoute: () => ApiCatalogRoute,
+} as any)
 const ApiAdminScrapeRoute = ApiAdminScrapeRouteImport.update({
   id: '/api/admin/scrape',
   path: '/api/admin/scrape',
@@ -100,7 +106,7 @@ export interface FileRoutesByFullPath {
   '/map': typeof MapRoute
   '/timetable': typeof TimetableRoute
   '/tree': typeof TreeRoute
-  '/api/catalog': typeof ApiCatalogRoute
+  '/api/catalog': typeof ApiCatalogRouteWithChildren
   '/api/health': typeof ApiHealthRoute
   '/api/prof-rating': typeof ApiProfRatingRoute
   '/api/reference-data': typeof ApiReferenceDataRoute
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/api/walk-route': typeof ApiWalkRouteRoute
   '/p/$id': typeof PIdRoute
   '/api/admin/scrape': typeof ApiAdminScrapeRoute
+  '/api/catalog/updates': typeof ApiCatalogUpdatesRoute
   '/api/course/$code': typeof ApiCourseCodeRoute
   '/api/share/$id': typeof ApiShareIdRoute
 }
@@ -116,7 +123,7 @@ export interface FileRoutesByTo {
   '/map': typeof MapRoute
   '/timetable': typeof TimetableRoute
   '/tree': typeof TreeRoute
-  '/api/catalog': typeof ApiCatalogRoute
+  '/api/catalog': typeof ApiCatalogRouteWithChildren
   '/api/health': typeof ApiHealthRoute
   '/api/prof-rating': typeof ApiProfRatingRoute
   '/api/reference-data': typeof ApiReferenceDataRoute
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/api/walk-route': typeof ApiWalkRouteRoute
   '/p/$id': typeof PIdRoute
   '/api/admin/scrape': typeof ApiAdminScrapeRoute
+  '/api/catalog/updates': typeof ApiCatalogUpdatesRoute
   '/api/course/$code': typeof ApiCourseCodeRoute
   '/api/share/$id': typeof ApiShareIdRoute
 }
@@ -133,7 +141,7 @@ export interface FileRoutesById {
   '/map': typeof MapRoute
   '/timetable': typeof TimetableRoute
   '/tree': typeof TreeRoute
-  '/api/catalog': typeof ApiCatalogRoute
+  '/api/catalog': typeof ApiCatalogRouteWithChildren
   '/api/health': typeof ApiHealthRoute
   '/api/prof-rating': typeof ApiProfRatingRoute
   '/api/reference-data': typeof ApiReferenceDataRoute
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/api/walk-route': typeof ApiWalkRouteRoute
   '/p/$id': typeof PIdRoute
   '/api/admin/scrape': typeof ApiAdminScrapeRoute
+  '/api/catalog/updates': typeof ApiCatalogUpdatesRoute
   '/api/course/$code': typeof ApiCourseCodeRoute
   '/api/share/$id': typeof ApiShareIdRoute
 }
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/api/walk-route'
     | '/p/$id'
     | '/api/admin/scrape'
+    | '/api/catalog/updates'
     | '/api/course/$code'
     | '/api/share/$id'
   fileRoutesByTo: FileRoutesByTo
@@ -175,6 +185,7 @@ export interface FileRouteTypes {
     | '/api/walk-route'
     | '/p/$id'
     | '/api/admin/scrape'
+    | '/api/catalog/updates'
     | '/api/course/$code'
     | '/api/share/$id'
   id:
@@ -191,6 +202,7 @@ export interface FileRouteTypes {
     | '/api/walk-route'
     | '/p/$id'
     | '/api/admin/scrape'
+    | '/api/catalog/updates'
     | '/api/course/$code'
     | '/api/share/$id'
   fileRoutesById: FileRoutesById
@@ -200,7 +212,7 @@ export interface RootRouteChildren {
   MapRoute: typeof MapRoute
   TimetableRoute: typeof TimetableRoute
   TreeRoute: typeof TreeRoute
-  ApiCatalogRoute: typeof ApiCatalogRoute
+  ApiCatalogRoute: typeof ApiCatalogRouteWithChildren
   ApiHealthRoute: typeof ApiHealthRoute
   ApiProfRatingRoute: typeof ApiProfRatingRoute
   ApiReferenceDataRoute: typeof ApiReferenceDataRoute
@@ -304,6 +316,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCourseCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/catalog/updates': {
+      id: '/api/catalog/updates'
+      path: '/updates'
+      fullPath: '/api/catalog/updates'
+      preLoaderRoute: typeof ApiCatalogUpdatesRouteImport
+      parentRoute: typeof ApiCatalogRoute
+    }
     '/api/admin/scrape': {
       id: '/api/admin/scrape'
       path: '/api/admin/scrape'
@@ -313,6 +332,18 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface ApiCatalogRouteChildren {
+  ApiCatalogUpdatesRoute: typeof ApiCatalogUpdatesRoute
+}
+
+const ApiCatalogRouteChildren: ApiCatalogRouteChildren = {
+  ApiCatalogUpdatesRoute: ApiCatalogUpdatesRoute,
+}
+
+const ApiCatalogRouteWithChildren = ApiCatalogRoute._addFileChildren(
+  ApiCatalogRouteChildren,
+)
 
 interface ApiShareRouteChildren {
   ApiShareIdRoute: typeof ApiShareIdRoute
@@ -331,7 +362,7 @@ const rootRouteChildren: RootRouteChildren = {
   MapRoute: MapRoute,
   TimetableRoute: TimetableRoute,
   TreeRoute: TreeRoute,
-  ApiCatalogRoute: ApiCatalogRoute,
+  ApiCatalogRoute: ApiCatalogRouteWithChildren,
   ApiHealthRoute: ApiHealthRoute,
   ApiProfRatingRoute: ApiProfRatingRoute,
   ApiReferenceDataRoute: ApiReferenceDataRoute,
@@ -344,12 +375,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

@@ -3,19 +3,39 @@ import type {} from "@tanstack/react-start";
 
 import { bindings } from "@/server/env";
 import {
+  abandonActiveRun,
   createWorkerScraperDeps,
+  getScrapeStatus,
   runScrapeChunk,
   SCRAPE_CURSOR_KEY,
 } from "@/server/scraper";
+import { readCatalogManifest } from "@/server/catalog-storage";
 
 export const Route = createFileRoute("/api/admin/scrape")({
   server: {
     handlers: {
+      GET: async ({ request }) => {
+        if (!isAuthorized(request)) {
+          return Response.json({ error: "unauthorized" }, { status: 401 });
+        }
+        const url = new URL(request.url);
+        const sessions = parseSessions(
+          url.searchParams.get("sessions")?.split(","),
+          bindings.SESSIONS,
+        );
+        const [status, manifest, legacyCursor] = await Promise.all([
+          getScrapeStatus(createWorkerScraperDeps(bindings).db, sessions),
+          readCatalogManifest(bindings.KV, sessions),
+          bindings.KV.get(SCRAPE_CURSOR_KEY),
+        ]);
+        return Response.json({
+          ...status,
+          manifest,
+          legacyCursorPresent: legacyCursor !== null,
+        });
+      },
       POST: async ({ request }) => {
-        if (
-          request.headers.get("Authorization") !==
-          `Bearer ${bindings.ADMIN_TOKEN}`
-        ) {
+        if (!isAuthorized(request)) {
           return Response.json({ error: "unauthorized" }, { status: 401 });
         }
 
@@ -29,11 +49,17 @@ export const Route = createFileRoute("/api/admin/scrape")({
         const maxPages = parseMaxPages(body?.maxPages);
 
         if (body?.reset === true) {
+          await abandonActiveRun(
+            createWorkerScraperDeps(bindings).db,
+            sessions,
+          );
           await bindings.KV.delete(SCRAPE_CURSOR_KEY);
         }
 
         const result = await runScrapeChunk(
-          maxPages ? { sessions, maxPages } : { sessions },
+          maxPages
+            ? { sessions, maxPages, triggerSource: "manual" }
+            : { sessions, triggerSource: "manual" },
           createWorkerScraperDeps(bindings),
         );
 
@@ -104,7 +130,13 @@ function parseMaxPages(value: number | undefined): number | undefined {
     return undefined;
   }
 
-  return Math.max(1, Math.floor(value));
+  return Math.min(25, Math.max(1, Math.floor(value)));
+}
+
+function isAuthorized(request: Request): boolean {
+  return (
+    request.headers.get("Authorization") === `Bearer ${bindings.ADMIN_TOKEN}`
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

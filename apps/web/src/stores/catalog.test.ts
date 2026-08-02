@@ -4,6 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { csc108Course } from "@/server/__fixtures__/ttb-pageable-csc108";
 import { useCatalogStore } from "./catalog";
 
+const catalogCache = vi.hoisted(() => new Map<string, unknown>());
+
+vi.mock("@/lib/idb", () => ({
+  getCatalogCache: async (key: string) => catalogCache.get(key) ?? null,
+  putCatalogCache: async (entry: { key: string }) => {
+    catalogCache.set(entry.key, structuredClone(entry));
+  },
+}));
+
 function makeArtifact(
   indicators?: DivisionalEnrolmentIndicators | unknown,
 ): Record<string, unknown> {
@@ -22,11 +31,20 @@ function makeArtifact(
 }
 
 function mockCatalogFetch(artifact: Record<string, unknown>): typeof fetch {
-  return (async () =>
-    new Response(JSON.stringify(artifact), {
+  return (async (input) => {
+    if (String(input).includes("/api/catalog/updates")) {
+      return Response.json({
+        sessions: artifact.sessions,
+        courses: [],
+        nextCursor: { updatedAt: artifact.scrapedAt, id: "" },
+        hasMore: false,
+      });
+    }
+    return new Response(JSON.stringify(artifact), {
       status: 200,
       headers: { "Content-Type": "application/json", ETag: '"run-1"' },
-    })) as typeof fetch;
+    });
+  }) as typeof fetch;
 }
 
 function resetStore(): void {
@@ -40,6 +58,7 @@ function resetStore(): void {
     levels: [],
     divisionalEnrolmentIndicators: {},
     lastCheckedAt: null,
+    deltaCursor: null,
   });
 }
 
@@ -47,6 +66,7 @@ describe("catalog store", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
+    catalogCache.clear();
     resetStore();
   });
 
@@ -100,6 +120,41 @@ describe("catalog store", () => {
     });
   });
 
+  it("merges durable D1 deltas after loading the base catalog", async () => {
+    const base = structuredClone(csc108Course) as Course;
+    base.sections[0]!.currentEnrolment = 10;
+    const updated = structuredClone(base) as Course;
+    updated.sections[0]!.currentEnrolment = 55;
+    const artifact = {
+      ...makeArtifact(),
+      courses: [base],
+    };
+    globalThis.fetch = (async (input) => {
+      if (String(input).includes("/api/catalog/updates")) {
+        return Response.json({
+          sessions: ["20269"],
+          courses: [updated],
+          nextCursor: {
+            updatedAt: "2026-07-10T13:00:00.000Z",
+            id: updated.id,
+          },
+          hasMore: false,
+        });
+      }
+      return new Response(JSON.stringify(artifact), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ETag: 'W/"catalog-1"' },
+      });
+    }) as typeof fetch;
+
+    await useCatalogStore.getState().loadCatalog(["20269"]);
+
+    expect(
+      useCatalogStore.getState().catalog?.courses[0]?.sections[0]
+        ?.currentEnrolment,
+    ).toBe(55);
+  });
+
   it("replaces the complete matching offering during a live refresh", async () => {
     const base = structuredClone(csc108Course) as Course;
     base.code = "PHY132H1";
@@ -118,12 +173,6 @@ describe("catalog store", () => {
     });
     await useCatalogStore.getState().loadCatalog(["20271"]);
 
-    const summer = structuredClone(base) as Course;
-    summer.id = "summer-id";
-    summer.sessions = ["20265S"];
-    summer.sections[0]!.currentEnrolment = 28;
-    summer.sections[0]!.maxEnrolment = 34;
-
     const winter = structuredClone(base) as Course;
     winter.sections[0]!.currentEnrolment = 36;
     winter.sections[0]!.instructors = [{ firstName: "New", lastName: "Lecturer" }];
@@ -134,21 +183,11 @@ describe("catalog store", () => {
     });
 
     globalThis.fetch = (async () =>
-      new Response(
-        JSON.stringify({
-          payload: {
-            pageableCourse: {
-              courses: [summer, winter],
-              total: 2,
-              page: 1,
-              pageSize: 20,
-              direction: "asc",
-            },
-          },
-          status: [],
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      )) as typeof fetch;
+      Response.json({
+        course: winter,
+        updatedAt: "2026-07-10T13:00:00.000Z",
+        cached: false,
+      })) as typeof fetch;
 
     await useCatalogStore.getState().refreshCourse(base);
 
@@ -161,7 +200,21 @@ describe("catalog store", () => {
       instructors: [{ firstName: "New", lastName: "Lecturer" }],
     });
 
-    globalThis.fetch = (async () => new Response(null, { status: 304 })) as typeof fetch;
+    resetStore();
+    globalThis.fetch = (async (input) => {
+      if (String(input).includes("/api/catalog/updates")) {
+        return Response.json({
+          sessions: ["20271"],
+          courses: [],
+          nextCursor: {
+            updatedAt: "2026-07-10T13:00:00.000Z",
+            id: "winter-id",
+          },
+          hasMore: false,
+        });
+      }
+      return new Response(null, { status: 304 });
+    }) as typeof fetch;
     await useCatalogStore.getState().loadCatalog(["20271"]);
     expect(useCatalogStore.getState().catalog?.courses[0]?.sections).toHaveLength(2);
   });

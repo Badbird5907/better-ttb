@@ -3,6 +3,7 @@ import {
   D1Database,
   DOStateStore,
   KVNamespace,
+  RateLimit,
   TanStackStart,
 } from "alchemy/cloudflare";
 
@@ -23,12 +24,21 @@ const kv = await KVNamespace("kv", {
   adopt: true,
 });
 
+const courseRefreshRateLimit = RateLimit({
+  namespace_id: 1001,
+  simple: {
+    limit: 20,
+    period: 60,
+  },
+});
+
 export const web = await TanStackStart("web", {
   cwd: "apps/web",
   adopt: true,
   bindings: {
     DB: db,
     KV: kv,
+    COURSE_REFRESH_RATE_LIMIT: courseRefreshRateLimit,
     SESSIONS: "20269,20271,20269-20271",
     ADMIN_TOKEN: alchemy.secret(process.env.ADMIN_TOKEN ?? "dev-admin-token"),
   },

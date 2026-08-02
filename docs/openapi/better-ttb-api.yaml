@@ -98,6 +98,71 @@ paths:
                 $ref: '#/components/schemas/CourseLookupResponse'
         '404':
           $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Courses]
+      summary: Durably refresh one catalog offering
+      operationId: refreshCourse
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, sectionCode, sessions]
+              properties:
+                id: {type: string}
+                sectionCode: {type: string}
+                sessions:
+                  type: array
+                  items: {type: string}
+      responses:
+        '200':
+          description: Complete refreshed course persisted in D1.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [course, updatedAt, cached]
+                properties:
+                  course: {$ref: '#/components/schemas/Course'}
+                  updatedAt: {type: string, format: date-time}
+                  cached: {type: boolean}
+        '202':
+          description: Another refresh currently owns the course claim.
+        '429':
+          description: Anonymous refresh rate limit exceeded.
+  /api/catalog/updates:
+    get:
+      tags: [Catalog]
+      summary: Get course rows newer than a durable delta cursor
+      operationId: getCatalogUpdates
+      parameters:
+        - {name: sessions, in: query, required: true, schema: {type: string}}
+        - {name: afterUpdatedAt, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: afterId, in: query, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Up to 500 complete changed courses and the next cursor.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessions, courses, nextCursor, hasMore]
+                properties:
+                  sessions: {type: array, items: {type: string}}
+                  courses: {type: array, items: {$ref: '#/components/schemas/Course'}}
+                  nextCursor:
+                    type: object
+                    required: [updatedAt, id]
+                    properties:
+                      updatedAt: {type: string, format: date-time}
+                      id: {type: string}
+                  hasMore: {type: boolean}
   /api/reference-data:
     get:
       tags: [Reference Data]
@@ -250,6 +315,16 @@ paths:
               example:
                 error: routing_upstream_error
   /api/admin/scrape:
+    get:
+      tags: [Admin]
+      summary: Inspect catalog maintenance state
+      security:
+        - AdminBearer: []
+      responses:
+        '200':
+          description: Active run, recent runs, catalog manifest, and legacy cursor state.
+        '401':
+          description: Missing or invalid admin bearer token.
     post:
       tags: [Admin]
       summary: Start or resume catalog scrape
@@ -321,6 +396,35 @@ paths:
                 $ref: '#/components/schemas/Error'
               example:
                 error: unauthorized
+  /api/health:
+    get:
+      summary: Check catalog freshness and scraper progress
+      responses:
+        '200':
+          description: Catalog and scraper are healthy.
+        '503':
+          description: Catalog is stale, the scraper is stalled, or restart protection is active.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, catalog, scrape]
+                properties:
+                  ok: {type: boolean}
+                  catalog:
+                    type: object
+                    properties:
+                      scrapedAt: {type: [string, 'null'], format: date-time}
+                      ageSeconds: {type: [integer, 'null']}
+                      stale: {type: boolean}
+                  scrape:
+                    type: object
+                    properties:
+                      status: {type: [string, 'null']}
+                      pagesDone: {type: [integer, 'null']}
+                      totalPages: {type: [integer, 'null']}
+                      lastProgressAt: {type: [string, 'null'], format: date-time}
+                      stalled: {type: boolean}
 components:
   securitySchemes:
     AdminBearer:

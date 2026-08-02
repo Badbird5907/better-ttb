@@ -1,21 +1,43 @@
 import type { Course, DivisionalEnrolmentIndicators } from "@better-ttb/shared";
 
 import {
+  type CatalogArtifact,
+  type CatalogKeyValue,
+  publishCatalog,
+  sessionKey,
+} from "../catalog-storage";
+import {
   buildPageableCoursesBody,
   getPageableCourses,
   TTB_PAGE_SIZE,
+  TtbApiError,
 } from "../ttb-client";
+import { captureServerEvent } from "../telemetry";
+
+export {
+  catalogKey,
+  catalogManifestKey,
+  catalogMetaKey,
+  sessionKey,
+} from "../catalog-storage";
+export type { CatalogArtifact } from "../catalog-storage";
 
 export const SCRAPE_CURSOR_KEY = "scrape:cursor";
-const DEFAULT_MAX_PAGES = 40;
-const MAX_PAGES_PER_INVOCATION = 40;
+const DEFAULT_MAX_PAGES = 25;
+const MAX_PAGES_PER_INVOCATION = 25;
+const MAX_UPSTREAM_REQUESTS = 45;
 const REQUEST_DELAY_MS = 150;
+const RETRY_DELAYS_MS = [250, 1_000];
 const CATALOG_DIVISION = "ARTSC";
 const SCHEDULED_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const LEASE_MS = 2 * 60 * 1000;
+const MAX_CONSECUTIVE_FAILURES = 3;
+const MAX_FAILED_RUNS_PER_DAY = 2;
 
 export interface RunScrapeChunkOptions {
   sessions: string[];
   maxPages?: number;
+  triggerSource?: "scheduled" | "manual";
 }
 
 export interface ScrapeCursor {
@@ -28,24 +50,10 @@ export interface ScrapeCursor {
 }
 
 export interface ScrapeChunkResult {
-  status: "running" | "complete";
+  status: "running" | "complete" | "busy" | "blocked";
   pagesDone: number;
   total: number | null;
   cursor: ScrapeCursor | null;
-}
-
-export interface CatalogArtifact {
-  sessions: string[];
-  scrapedAt: string;
-  total: number;
-  courses: Course[];
-  divisionalEnrolmentIndicators?: DivisionalEnrolmentIndicators;
-}
-
-export interface CatalogMeta {
-  etag: string;
-  scrapedAt: string;
-  total: number;
 }
 
 export interface ScraperStatement {
@@ -60,15 +68,7 @@ export interface ScraperDatabase {
   batch<T = unknown>(statements: ScraperStatement[]): Promise<D1Result<T>[]>;
 }
 
-export interface ScraperKeyValue {
-  get(key: string): Promise<string | null>;
-  put(
-    key: string,
-    value: string,
-    options?: { expirationTtl?: number },
-  ): Promise<void>;
-  delete(key: string): Promise<void>;
-}
+export type ScraperKeyValue = CatalogKeyValue;
 
 export interface ScraperDeps {
   db: ScraperDatabase;
@@ -78,12 +78,30 @@ export interface ScraperDeps {
   now?: () => Date;
 }
 
-interface RunIdRow {
+export interface ScrapeRunRecord {
   id: number;
+  started_at: string;
+  finished_at: string | null;
+  pages_done: number;
+  total_pages: number | null;
+  status: string;
+  sessions: string;
+  total_courses: number | null;
+  last_attempt_at: string | null;
+  last_progress_at: string | null;
+  failure_count: number;
+  last_error: string | null;
+  lease_expires_at: string | null;
+  trigger_source: string | null;
+  indicators_json: string | null;
 }
 
 interface CourseDataRow {
   data_json: string;
+}
+
+interface CountRow {
+  count: number;
 }
 
 export function createWorkerScraperDeps(
@@ -110,80 +128,123 @@ export async function runScrapeChunk(
   }
 
   const sessions = normalizeSessions(options.sessions);
+  const key = sessionKey(sessions);
   const maxPages = normalizeMaxPages(options.maxPages);
   const sleep = deps.sleep ?? delay;
   const now = deps.now ?? (() => new Date());
+  await deps.kv.delete(SCRAPE_CURSOR_KEY);
 
-  let cursor = await readCursor(deps.kv);
-
-  if (!cursor || !sameSessions(cursor.sessions, sessions)) {
-    cursor = await startRun(deps.db, sessions, now().toISOString());
-  }
-
-  let pagesDone = 0;
-
-  while (pagesDone < maxPages) {
-    const pageToFetch = cursor.page;
-    const { pageableCourse, divisionalEnrolmentIndicators } =
-      await getPageableCourses(
-        buildPageableCoursesBody({
-          sessions: cursor.sessions,
-          divisions: [CATALOG_DIVISION],
-          page: pageToFetch,
-        }),
-        deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {},
+  let run = await readActiveRun(deps.db, key);
+  if (!run) {
+    try {
+      run = await startRun(
+        deps.db,
+        key,
+        now().toISOString(),
+        options.triggerSource ?? "manual",
       );
-
-    await upsertCourses(
-      deps.db,
-      pageableCourse.courses,
-      cursor.sessions,
-      cursor.runId,
-      now().toISOString(),
-    );
-
-    pagesDone += 1;
-
-    const total = pageableCourse.total;
-    const mergedIndicators = mergeIndicators(
-      cursor.divisionalEnrolmentIndicators,
-      divisionalEnrolmentIndicators,
-    );
-    const nextCursor: ScrapeCursor = {
-      ...cursor,
-      page: pageToFetch + 1,
-      total,
-      ...(mergedIndicators
-        ? { divisionalEnrolmentIndicators: mergedIndicators }
-        : {}),
-    };
-
-    await updateRunProgress(deps.db, nextCursor);
-
-    if (isLastPage(pageToFetch, total, pageableCourse.courses.length)) {
-      const result = await completeRun(deps, nextCursor, now().toISOString());
-      return {
-        status: "complete",
-        pagesDone,
-        total: result.total,
-        cursor: null,
-      };
-    }
-
-    cursor = nextCursor;
-    await deps.kv.put(SCRAPE_CURSOR_KEY, JSON.stringify(cursor));
-
-    if (pagesDone < maxPages) {
-      await sleep(REQUEST_DELAY_MS);
+    } catch (error) {
+      // The unique running-session index may have been won by a concurrent
+      // scheduled or manual invocation between our read and insert.
+      run = await readActiveRun(deps.db, key);
+      if (!run) {
+        throw error;
+      }
     }
   }
 
-  return {
-    status: "running",
-    pagesDone,
-    total: cursor.total,
-    cursor,
-  };
+  const claimedAt = now();
+  const lease = await acquireLease(deps.db, run.id, claimedAt);
+  if (!lease) {
+    return resultForRun("busy", run, sessions);
+  }
+  run = lease;
+
+  let pagesDoneThisInvocation = 0;
+  const requestBudget = { used: 0 };
+
+  try {
+    while (pagesDoneThisInvocation < maxPages) {
+      const page: number = run.pages_done + 1;
+      const { pageableCourse, divisionalEnrolmentIndicators } =
+        await fetchPageWithRetry(
+          sessions,
+          page,
+          deps.fetchImpl,
+          sleep,
+          requestBudget,
+        );
+      const updatedAt = now().toISOString();
+      const indicators = mergeIndicators(
+        parseIndicators(run.indicators_json),
+        divisionalEnrolmentIndicators,
+      );
+      const pagesDone: number = page;
+      const total = pageableCourse.total;
+      const totalPages = Math.ceil(total / TTB_PAGE_SIZE);
+
+      await commitPage(
+        deps.db,
+        pageableCourse.courses,
+        key,
+        run.id,
+        updatedAt,
+        pagesDone,
+        total,
+        totalPages,
+        indicators,
+      );
+      run = {
+        ...run,
+        pages_done: pagesDone,
+        total_pages: totalPages,
+        total_courses: total,
+        last_progress_at: updatedAt,
+        failure_count: 0,
+        last_error: null,
+        indicators_json: indicators ? JSON.stringify(indicators) : null,
+      };
+      pagesDoneThisInvocation += 1;
+
+      if (isLastPage(page, total, pageableCourse.courses.length)) {
+        const snapshotCutoff = now().toISOString();
+        await completeRun(deps, run, sessions, snapshotCutoff, now().toISOString());
+        return {
+          status: "complete",
+          pagesDone: pagesDoneThisInvocation,
+          total,
+          cursor: null,
+        };
+      }
+
+      if (pagesDoneThisInvocation < maxPages) {
+        await sleep(REQUEST_DELAY_MS);
+      }
+    }
+
+    await releaseLease(deps.db, run.id);
+    console.info("Catalog scrape chunk completed", {
+      runId: run.id,
+      pagesDone: pagesDoneThisInvocation,
+      total: run.total_courses,
+      nextPage: run.pages_done + 1,
+    });
+    captureServerEvent("catalog_scrape_chunk_completed", {
+      runId: run.id,
+      pagesDone: pagesDoneThisInvocation,
+      total: run.total_courses,
+      nextPage: run.pages_done + 1,
+    });
+    return {
+      status: "running",
+      pagesDone: pagesDoneThisInvocation,
+      total: run.total_courses,
+      cursor: cursorForRun(run, sessions),
+    };
+  } catch (error) {
+    await recordFailure(deps.db, run.id, error, now().toISOString());
+    throw error;
+  }
 }
 
 export async function runScheduledScrape(
@@ -191,99 +252,134 @@ export async function runScheduledScrape(
   deps: ScraperDeps,
 ): Promise<ScrapeChunkResult | null> {
   const sessions = normalizeSessions(options.sessions);
-  const cursor = await readCursor(deps.kv);
-
-  if (cursor && sameSessions(cursor.sessions, sessions)) {
-    return await runScrapeChunk(options, deps);
-  }
-
-  if (cursor) {
-    await deps.kv.delete(SCRAPE_CURSOR_KEY);
-  }
-
-  const rawMeta = await deps.kv.get(catalogMetaKey(sessions));
-  const scrapedAt = parseScrapedAt(rawMeta);
+  const key = sessionKey(sessions);
   const now = deps.now?.() ?? new Date();
+  await deps.kv.delete(SCRAPE_CURSOR_KEY);
 
+  const active = await readActiveRun(deps.db, key);
+  if (active) {
+    return await runScrapeChunk(
+      { ...options, sessions, triggerSource: "scheduled" },
+      deps,
+    );
+  }
+
+  if (await automaticRestartsBlocked(deps.db, key, now)) {
+    return { status: "blocked", pagesDone: 0, total: null, cursor: null };
+  }
+
+  const latest = await readLatestCompletedRun(deps.db, key);
   if (
-    scrapedAt !== null &&
-    now.getTime() - scrapedAt.getTime() < SCHEDULED_REFRESH_INTERVAL_MS
+    latest &&
+    now.getTime() - Date.parse(latest.started_at) < SCHEDULED_REFRESH_INTERVAL_MS
   ) {
     return null;
   }
 
-  return await runScrapeChunk(options, deps);
+  return await runScrapeChunk(
+    { ...options, sessions, triggerSource: "scheduled" },
+    deps,
+  );
 }
 
-export function catalogKey(sessions: string[]): string {
-  return `catalog:${sessionKey(sessions)}`;
+export async function abandonActiveRun(
+  db: ScraperDatabase,
+  sessions: string[],
+  now = new Date(),
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE scrape_runs
+       SET status = 'abandoned', finished_at = ?, lease_expires_at = NULL
+       WHERE sessions = ? AND status = 'running'`,
+    )
+    .bind(now.toISOString(), sessionKey(sessions))
+    .run();
+  captureServerEvent("catalog_scrape_abandoned", {
+    sessions: sessionKey(sessions),
+  });
 }
 
-export function catalogMetaKey(sessions: string[]): string {
-  return `catalog:meta:${sessionKey(sessions)}`;
-}
-
-export function sessionKey(sessions: string[]): string {
-  return normalizeSessions(sessions).join(",");
+export async function getScrapeStatus(
+  db: ScraperDatabase,
+  sessions: string[],
+): Promise<{ active: ScrapeRunRecord | null; recent: ScrapeRunRecord[] }> {
+  const key = sessionKey(sessions);
+  const [active, recent] = await Promise.all([
+    readActiveRun(db, key),
+    db
+      .prepare(
+        `SELECT * FROM scrape_runs WHERE sessions = ? ORDER BY started_at DESC LIMIT 10`,
+      )
+      .bind(key)
+      .all<ScrapeRunRecord>(),
+  ]);
+  return { active, recent: recent.results };
 }
 
 async function startRun(
   db: ScraperDatabase,
-  sessions: string[],
+  sessions: string,
   startedAt: string,
-): Promise<ScrapeCursor> {
+  triggerSource: "scheduled" | "manual",
+): Promise<ScrapeRunRecord> {
   const row = await db
     .prepare(
-      "INSERT INTO scrape_runs (started_at, finished_at, pages_done, total_pages, status) VALUES (?, NULL, 0, NULL, ?) RETURNING id",
+      `INSERT INTO scrape_runs (
+         started_at, finished_at, pages_done, total_pages, status, sessions,
+         total_courses, last_attempt_at, last_progress_at, failure_count,
+         last_error, lease_expires_at, trigger_source, indicators_json
+       ) VALUES (?, NULL, 0, NULL, 'running', ?, NULL, NULL, NULL, 0, NULL, NULL, ?, NULL)
+       RETURNING *`,
     )
-    .bind(startedAt, "running")
-    .first<RunIdRow>();
-
+    .bind(startedAt, sessions, triggerSource)
+    .first<ScrapeRunRecord>();
   if (!row) {
     throw new Error("Failed to start scrape run");
   }
-
-  return {
-    sessions,
-    page: 1,
-    total: null,
+  console.info("Catalog scrape started", { runId: row.id, sessions, triggerSource });
+  captureServerEvent("catalog_scrape_started", {
     runId: row.id,
-    startedAt,
-  };
+    sessions,
+    triggerSource,
+  });
+  return row;
 }
 
-async function updateRunProgress(
+async function acquireLease(
   db: ScraperDatabase,
-  cursor: ScrapeCursor,
-): Promise<void> {
-  const totalPages =
-    cursor.total === null ? null : Math.ceil(cursor.total / TTB_PAGE_SIZE);
-
-  await db
+  runId: number,
+  now: Date,
+): Promise<ScrapeRunRecord | null> {
+  const nowIso = now.toISOString();
+  const leaseExpiresAt = new Date(now.getTime() + LEASE_MS).toISOString();
+  return await db
     .prepare(
-      "UPDATE scrape_runs SET pages_done = ?, total_pages = ?, status = ? WHERE id = ?",
+      `UPDATE scrape_runs
+       SET lease_expires_at = ?, last_attempt_at = ?
+       WHERE id = ? AND status = 'running'
+         AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
+       RETURNING *`,
     )
-    .bind(cursor.page - 1, totalPages, "running", cursor.runId)
-    .run();
+    .bind(leaseExpiresAt, nowIso, runId, nowIso)
+    .first<ScrapeRunRecord>();
 }
 
-async function upsertCourses(
+async function commitPage(
   db: ScraperDatabase,
   courses: Course[],
-  sessions: string[],
+  sessions: string,
   runId: number,
   updatedAt: string,
+  pagesDone: number,
+  totalCourses: number,
+  totalPages: number,
+  indicators: DivisionalEnrolmentIndicators | undefined,
 ): Promise<void> {
-  if (courses.length === 0) {
-    return;
-  }
-
-  const key = sessionKey(sessions);
-  const statement = `
+  const upsert = `
     INSERT INTO courses (
       id, code, section_code, session, name, department, data_json, updated_at, scrape_run_id
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       code = excluded.code,
       section_code = excluded.section_code,
@@ -294,15 +390,14 @@ async function upsertCourses(
       updated_at = excluded.updated_at,
       scrape_run_id = excluded.scrape_run_id
   `;
-
   const statements = courses.map((course) =>
     db
-      .prepare(statement)
+      .prepare(upsert)
       .bind(
         course.id,
         course.code,
         course.sectionCode,
-        key,
+        sessions,
         course.name,
         course.department.name,
         JSON.stringify(course),
@@ -310,50 +405,71 @@ async function upsertCourses(
         runId,
       ),
   );
-
+  statements.push(
+    db
+      .prepare(
+        `UPDATE scrape_runs
+         SET pages_done = ?, total_pages = ?, total_courses = ?,
+             last_progress_at = ?, failure_count = 0, last_error = NULL,
+             indicators_json = ?
+         WHERE id = ? AND status = 'running'`,
+      )
+      .bind(
+        pagesDone,
+        totalPages,
+        totalCourses,
+        updatedAt,
+        indicators ? JSON.stringify(indicators) : null,
+        runId,
+      ),
+  );
   await db.batch(statements);
 }
 
 async function completeRun(
   deps: ScraperDeps,
-  cursor: ScrapeCursor,
-  scrapedAt: string,
-): Promise<CatalogMeta> {
-  const courses = await readCoursesForRun(deps.db, cursor.sessions, cursor.runId);
-  const total = cursor.total ?? courses.length;
-  const indicators = cursor.divisionalEnrolmentIndicators;
+  run: ScrapeRunRecord,
+  sessions: string[],
+  snapshotCutoff: string,
+  publishedAt: string,
+): Promise<void> {
+  const courses = await readCoursesForRun(deps.db, sessions, run.id);
+  const total = run.total_courses ?? courses.length;
+  const indicators = parseIndicators(run.indicators_json);
   const catalog: CatalogArtifact = {
-    sessions: cursor.sessions,
-    scrapedAt,
+    sessions,
+    scrapedAt: snapshotCutoff,
     total,
     courses,
-    ...(indicators && Object.keys(indicators).length > 0
-      ? { divisionalEnrolmentIndicators: indicators }
-      : {}),
+    ...(indicators ? { divisionalEnrolmentIndicators: indicators } : {}),
   };
-  const meta: CatalogMeta = {
-    etag: String(cursor.runId),
-    scrapedAt,
-    total,
-  };
-
-  await deps.kv.put(catalogKey(cursor.sessions), JSON.stringify(catalog));
-  await deps.kv.put(catalogMetaKey(cursor.sessions), JSON.stringify(meta));
+  const manifest = await publishCatalog(deps.kv, catalog, run.id, publishedAt);
   await deps.db
     .prepare(
-      "UPDATE scrape_runs SET finished_at = ?, pages_done = ?, total_pages = ?, status = ? WHERE id = ?",
+      `UPDATE scrape_runs
+       SET finished_at = ?, pages_done = ?, total_pages = ?, status = 'complete',
+           lease_expires_at = NULL, last_error = NULL
+       WHERE id = ?`,
     )
     .bind(
-      scrapedAt,
-      cursor.page - 1,
+      publishedAt,
+      run.pages_done,
       Math.ceil(total / TTB_PAGE_SIZE),
-      "complete",
-      cursor.runId,
+      run.id,
     )
     .run();
-  await deps.kv.delete(SCRAPE_CURSOR_KEY);
-
-  return meta;
+  console.info("Catalog scrape completed", {
+    runId: run.id,
+    total,
+    scrapedAt: snapshotCutoff,
+    compressedBytes: manifest.active.compressedBytes,
+  });
+  captureServerEvent("catalog_scrape_completed", {
+    runId: run.id,
+    total,
+    scrapedAt: snapshotCutoff,
+    compressedBytes: manifest.active.compressedBytes,
+  });
 }
 
 async function readCoursesForRun(
@@ -363,108 +479,177 @@ async function readCoursesForRun(
 ): Promise<Course[]> {
   const result = await db
     .prepare(
-      "SELECT data_json FROM courses WHERE session = ? AND scrape_run_id = ? ORDER BY code, section_code",
+      `SELECT data_json FROM courses
+       WHERE session = ? AND scrape_run_id = ?
+       ORDER BY code, section_code`,
     )
     .bind(sessionKey(sessions), runId)
     .all<CourseDataRow>();
-
   return result.results.map((row) => JSON.parse(row.data_json) as Course);
 }
 
-async function readCursor(kv: ScraperKeyValue): Promise<ScrapeCursor | null> {
-  const rawCursor = await kv.get(SCRAPE_CURSOR_KEY);
-
-  if (!rawCursor) {
-    return null;
-  }
-
-  try {
-    return parseCursor(JSON.parse(rawCursor) as unknown);
-  } catch {
-    return null;
-  }
+async function readActiveRun(
+  db: ScraperDatabase,
+  sessions: string,
+): Promise<ScrapeRunRecord | null> {
+  return await db
+    .prepare(
+      `SELECT * FROM scrape_runs
+       WHERE sessions = ? AND status = 'running'
+       ORDER BY started_at DESC LIMIT 1`,
+    )
+    .bind(sessions)
+    .first<ScrapeRunRecord>();
 }
 
-function parseCursor(value: unknown): ScrapeCursor | null {
-  if (!isRecord(value)) {
-    return null;
+async function readLatestCompletedRun(
+  db: ScraperDatabase,
+  sessions: string,
+): Promise<ScrapeRunRecord | null> {
+  return await db
+    .prepare(
+      `SELECT * FROM scrape_runs
+       WHERE sessions = ? AND status = 'complete'
+       ORDER BY started_at DESC LIMIT 1`,
+    )
+    .bind(sessions)
+    .first<ScrapeRunRecord>();
+}
+
+async function automaticRestartsBlocked(
+  db: ScraperDatabase,
+  sessions: string,
+  now: Date,
+): Promise<boolean> {
+  const cutoff = new Date(now.getTime() - SCHEDULED_REFRESH_INTERVAL_MS).toISOString();
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS count FROM scrape_runs
+       WHERE sessions = ? AND status = 'failed' AND started_at >= ?`,
+    )
+    .bind(sessions, cutoff)
+    .first<CountRow>();
+  return (row?.count ?? 0) >= MAX_FAILED_RUNS_PER_DAY;
+}
+
+async function releaseLease(db: ScraperDatabase, runId: number): Promise<void> {
+  await db
+    .prepare("UPDATE scrape_runs SET lease_expires_at = NULL WHERE id = ?")
+    .bind(runId)
+    .run();
+}
+
+async function recordFailure(
+  db: ScraperDatabase,
+  runId: number,
+  error: unknown,
+  failedAt: string,
+): Promise<void> {
+  const message = sanitizeError(error);
+  const row = await db
+    .prepare(
+      `UPDATE scrape_runs
+       SET failure_count = failure_count + 1, last_error = ?,
+           last_attempt_at = ?, lease_expires_at = NULL
+       WHERE id = ?
+       RETURNING failure_count`,
+    )
+    .bind(message, failedAt, runId)
+    .first<{ failure_count: number }>();
+  if ((row?.failure_count ?? 0) >= MAX_CONSECUTIVE_FAILURES) {
+    await db
+      .prepare(
+        `UPDATE scrape_runs
+         SET status = 'failed', finished_at = ?, lease_expires_at = NULL
+         WHERE id = ?`,
+      )
+      .bind(failedAt, runId)
+      .run();
   }
+  console.error("Catalog scrape failed", { runId, message });
+  captureServerEvent("catalog_scrape_failed", { runId, message });
+}
 
-  const sessions = value.sessions;
-  const page = value.page;
-  const total = value.total;
-  const runId = value.runId;
-  const startedAt = value.startedAt;
-
-  if (
-    !Array.isArray(sessions) ||
-    !sessions.every((session) => typeof session === "string") ||
-    typeof page !== "number" ||
-    (typeof total !== "number" && total !== null) ||
-    typeof runId !== "number" ||
-    typeof startedAt !== "string"
-  ) {
-    return null;
+async function fetchPageWithRetry(
+  sessions: string[],
+  page: number,
+  fetchImpl: typeof fetch | undefined,
+  sleep: (ms: number) => Promise<void>,
+  budget: { used: number },
+) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (budget.used >= MAX_UPSTREAM_REQUESTS) {
+      throw new Error("Scrape upstream request budget exhausted");
+    }
+    budget.used += 1;
+    try {
+      return await getPageableCourses(
+        buildPageableCoursesBody({ sessions, divisions: [CATALOG_DIVISION], page }),
+        fetchImpl ? { fetchImpl } : {},
+      );
+    } catch (error) {
+      lastError = error;
+      if (!isRetryable(error) || attempt >= RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+      await sleep(RETRY_DELAYS_MS[attempt] ?? 1_000);
+    }
   }
+  throw lastError;
+}
 
-  const indicators = parseIndicatorsRecord(value.divisionalEnrolmentIndicators);
+function isRetryable(error: unknown): boolean {
+  return !(error instanceof TtbApiError) || error.status === 429 || error.status >= 500;
+}
 
+function resultForRun(
+  status: "busy" | "blocked",
+  run: ScrapeRunRecord,
+  sessions: string[],
+): ScrapeChunkResult {
+  return {
+    status,
+    pagesDone: 0,
+    total: run.total_courses,
+    cursor: cursorForRun(run, sessions),
+  };
+}
+
+function cursorForRun(run: ScrapeRunRecord, sessions: string[]): ScrapeCursor {
+  const indicators = parseIndicators(run.indicators_json);
   return {
     sessions,
-    page,
-    total,
-    runId,
-    startedAt,
+    page: run.pages_done + 1,
+    total: run.total_courses,
+    runId: run.id,
+    startedAt: run.started_at,
     ...(indicators ? { divisionalEnrolmentIndicators: indicators } : {}),
   };
 }
 
-function parseScrapedAt(value: string | null): Date | null {
+function parseIndicators(
+  value: string | null,
+): DivisionalEnrolmentIndicators | undefined {
   if (!value) {
-    return null;
+    return undefined;
   }
-
   try {
     const parsed = JSON.parse(value) as unknown;
-
-    if (!isRecord(parsed) || typeof parsed.scrapedAt !== "string") {
-      return null;
-    }
-
-    const date = new Date(parsed.scrapedAt);
-    return Number.isNaN(date.getTime()) ? null : date;
+    return isRecord(parsed)
+      ? (parsed as DivisionalEnrolmentIndicators)
+      : undefined;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
-function parseIndicatorsRecord(
-  value: unknown,
+function mergeIndicators(
+  existing: DivisionalEnrolmentIndicators | undefined,
+  incoming: DivisionalEnrolmentIndicators,
 ): DivisionalEnrolmentIndicators | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const result: DivisionalEnrolmentIndicators = {};
-
-  for (const [division, entries] of Object.entries(value)) {
-    if (!Array.isArray(entries)) {
-      continue;
-    }
-
-    const indicators = entries.filter(
-      (entry): entry is { code: string; name: string } =>
-        isRecord(entry) &&
-        typeof entry.code === "string" &&
-        typeof entry.name === "string",
-    );
-
-    if (indicators.length > 0) {
-      result[division] = indicators;
-    }
-  }
-
-  return Object.keys(result).length > 0 ? result : undefined;
+  const merged = { ...(existing ?? {}), ...incoming };
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 function isLastPage(page: number, total: number, courseCount: number): boolean {
@@ -475,11 +660,9 @@ function normalizeSessions(sessions: string[]): string[] {
   const normalized = sessions
     .map((session) => session.trim())
     .filter((session) => session.length > 0);
-
   if (normalized.length === 0) {
     throw new Error("At least one session is required");
   }
-
   return normalized;
 }
 
@@ -490,26 +673,8 @@ function normalizeMaxPages(maxPages: number | undefined): number {
   );
 }
 
-function sameSessions(left: string[], right: string[]): boolean {
-  return sessionKey(left) === sessionKey(right);
-}
-
-/**
- * Merge newly seen indicators into the accumulated map (last-write-wins per
- * division). Returns undefined when nothing has been accumulated so callers can
- * keep the optional field absent under exactOptionalPropertyTypes.
- */
-function mergeIndicators(
-  existing: DivisionalEnrolmentIndicators | undefined,
-  incoming: DivisionalEnrolmentIndicators,
-): DivisionalEnrolmentIndicators | undefined {
-  const merged: DivisionalEnrolmentIndicators = { ...(existing ?? {}) };
-
-  for (const [division, indicators] of Object.entries(incoming)) {
-    merged[division] = indicators;
-  }
-
-  return Object.keys(merged).length > 0 ? merged : undefined;
+function sanitizeError(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).slice(0, 500);
 }
 
 function delay(ms: number): Promise<void> {

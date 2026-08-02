@@ -1,12 +1,14 @@
 import type {
+  CatalogDeltaCursor,
+  CatalogUpdatesResponse,
   Course,
+  CourseRefreshPendingResponse,
+  CourseRefreshResponse,
   DivisionalEnrolmentIndicators,
-  TtbCourseLookupResponse,
 } from "@better-ttb/shared";
 import { create } from "zustand";
 
 import { getCatalogCache, putCatalogCache } from "@/lib/idb";
-import { extractLiveCourse } from "@/lib/live-course";
 import { getCourseLevel } from "@/lib/search";
 
 export type CatalogStatus = "idle" | "loading" | "ready" | "empty" | "error";
@@ -35,6 +37,7 @@ interface CatalogState {
   levels: string[];
   divisionalEnrolmentIndicators: DivisionalEnrolmentIndicators;
   lastCheckedAt: string | null;
+  deltaCursor: CatalogDeltaCursor | null;
   loadCatalog: (sessions: string[]) => Promise<void>;
   refreshCourse: (course: Course) => Promise<Course>;
 }
@@ -51,6 +54,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   levels: [],
   divisionalEnrolmentIndicators: {},
   lastCheckedAt: null,
+  deltaCursor: null,
   loadCatalog: (sessions) => {
     const normalizedSessions = normalizeSessions(sessions);
     const key = normalizedSessions.join(",");
@@ -67,24 +71,6 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     return load;
   },
   refreshCourse: async (course) => {
-    const params = new URLSearchParams({ sectionCode: course.sectionCode });
-    const response = await fetch(`/api/course/${course.code}?${params.toString()}`, {
-      cache: "no-cache",
-    });
-
-    if (!response.ok) {
-      throw new Error(`Refresh failed with HTTP ${response.status}`);
-    }
-
-    const liveCourse = extractLiveCourse(
-      (await response.json()) as TtbCourseLookupResponse,
-      course,
-    );
-
-    if (!liveCourse) {
-      throw new Error("Live course response did not include an unambiguous matching offering");
-    }
-
     const current = get();
     const catalog = current.catalog;
 
@@ -92,28 +78,34 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       throw new Error("Cannot refresh a course before its catalog is loaded");
     }
 
-    let replaced = false;
-    const courses = catalog.courses.map((candidate) => {
-      if (sameOffering(candidate, course)) {
-        replaced = true;
-        return liveCourse;
-      }
-
-      return candidate;
+    const refreshed = await requestCourseRefresh(course, catalog.sessions);
+    const courses = mergeCourses(catalog.courses, [refreshed.course]);
+    const deltaCursor = laterCursor(current.deltaCursor, {
+      updatedAt: refreshed.updatedAt,
+      id: refreshed.course.id,
     });
-
-    if (!replaced) {
-      throw new Error("The refreshed offering is not present in the loaded catalog");
-    }
+    const nextCatalog = { ...catalog, courses };
 
     setCatalogReady(
       set,
-      { ...catalog, courses },
+      nextCatalog,
       current.etag,
       current.sessionsKey ?? normalizeSessions(course.sessions).join(","),
       null,
+      deltaCursor,
     );
-    return liveCourse;
+    try {
+      await putCatalogCache<CatalogArtifact>({
+        key: current.sessionsKey ?? catalog.sessions.join(","),
+        etag: current.etag,
+        body: nextCatalog,
+        updatedAt: new Date().toISOString(),
+        ...(deltaCursor ? { deltaCursor } : {}),
+      });
+    } catch {
+      // The D1 update is already durable; a later delta fetch repairs this cache.
+    }
+    return refreshed.course;
   },
 }));
 
@@ -129,7 +121,14 @@ async function loadCatalog(
   const cached = await readCachedCatalog(key);
 
   if (cached && !hasCurrentCatalog) {
-    setCatalogReady(set, cached.body, cached.etag, key, null);
+    setCatalogReady(
+      set,
+      cached.body,
+      cached.etag,
+      key,
+      null,
+      cached.deltaCursor,
+    );
   } else if (!hasCurrentCatalog && !cached) {
     set({
       status: "loading",
@@ -140,6 +139,7 @@ async function loadCatalog(
       departments: [],
       levels: [],
       divisionalEnrolmentIndicators: {},
+      deltaCursor: null,
     });
   }
 
@@ -148,26 +148,6 @@ async function loadCatalog(
       normalizedSessions,
       get().sessionsKey === key ? get().etag : cached?.etag ?? null,
     );
-
-    if (response.status === 304) {
-      const current = get();
-
-      if (current.sessionsKey !== key) {
-        return;
-      }
-
-      if (cached || (current.catalog && current.sessionsKey === key)) {
-        set({
-          status: "ready",
-          error: null,
-          sessionsKey: key,
-          lastCheckedAt: new Date().toISOString(),
-        });
-        return;
-      }
-
-      throw new Error("Catalog was not modified but no cached catalog exists");
-    }
 
     if (response.status === 404) {
       if (get().sessionsKey !== key) {
@@ -183,29 +163,65 @@ async function loadCatalog(
         departments: [],
         levels: [],
         divisionalEnrolmentIndicators: {},
+        deltaCursor: null,
         lastCheckedAt: new Date().toISOString(),
       });
       return;
     }
 
-    if (!response.ok) {
+    if (!response.ok && response.status !== 304) {
       throw new Error(`Catalog request failed with HTTP ${response.status}`);
     }
 
-    const body = parseCatalogArtifact(await response.json());
-    const etag = response.headers.get("ETag");
+    const current = get();
+    let body: CatalogArtifact;
+    let etag: string | null;
+    let deltaCursor: CatalogDeltaCursor;
+    if (response.status === 304) {
+      const source =
+        current.sessionsKey === key && current.catalog
+          ? {
+              body: current.catalog,
+              etag: current.etag,
+              deltaCursor: current.deltaCursor,
+            }
+          : cached;
+      if (!source) {
+        throw new Error("Catalog was not modified but no cached catalog exists");
+      }
+      body = source.body;
+      etag = source.etag;
+      deltaCursor = source.deltaCursor ?? {
+        updatedAt: body.scrapedAt,
+        id: "",
+      };
+    } else {
+      body = parseCatalogArtifact(await response.json());
+      etag = response.headers.get("ETag");
+      deltaCursor = { updatedAt: body.scrapedAt, id: "" };
+    }
+
+    let deltaError: string | null = null;
+    try {
+      const deltas = await fetchCatalogUpdates(normalizedSessions, deltaCursor);
+      body = { ...body, courses: mergeCourses(body.courses, deltas.courses) };
+      deltaCursor = deltas.cursor;
+    } catch (error) {
+      deltaError = error instanceof Error ? error.message : String(error);
+    }
     await putCatalogCache<CatalogArtifact>({
       key,
       etag,
       body,
       updatedAt: new Date().toISOString(),
+      deltaCursor,
     });
 
     if (get().sessionsKey !== key) {
       return;
     }
 
-    setCatalogReady(set, body, etag, key, null);
+    setCatalogReady(set, body, etag, key, deltaError, deltaCursor);
     set({ lastCheckedAt: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -224,6 +240,7 @@ async function loadCatalog(
       departments: [],
       levels: [],
       divisionalEnrolmentIndicators: {},
+      deltaCursor: null,
     });
   }
 }
@@ -244,7 +261,11 @@ function fetchCatalog(sessions: string[], etag: string | null): Promise<Response
 
 async function readCachedCatalog(
   key: string,
-): Promise<{ body: CatalogArtifact; etag: string | null } | null> {
+): Promise<{
+  body: CatalogArtifact;
+  etag: string | null;
+  deltaCursor: CatalogDeltaCursor | null;
+} | null> {
   try {
     const cached = await getCatalogCache<CatalogArtifact>(key);
 
@@ -255,6 +276,7 @@ async function readCachedCatalog(
     return {
       body: cached.body,
       etag: cached.etag,
+      deltaCursor: cached.deltaCursor ?? null,
     };
   } catch {
     return null;
@@ -267,6 +289,7 @@ function setCatalogReady(
   etag: string | null,
   sessionsKey: string,
   error: string | null,
+  deltaCursor: CatalogDeltaCursor | null,
 ): void {
   set({
     status: "ready",
@@ -277,7 +300,148 @@ function setCatalogReady(
     departments: deriveDepartments(catalog.courses),
     levels: deriveLevels(catalog.courses),
     divisionalEnrolmentIndicators: catalog.divisionalEnrolmentIndicators ?? {},
+    deltaCursor,
   });
+}
+
+async function fetchCatalogUpdates(
+  sessions: string[],
+  initialCursor: CatalogDeltaCursor,
+): Promise<{ courses: Course[]; cursor: CatalogDeltaCursor }> {
+  const courses: Course[] = [];
+  let cursor = initialCursor;
+
+  for (let page = 0; page < 20; page += 1) {
+    const params = new URLSearchParams({
+      sessions: sessions.join(","),
+      afterUpdatedAt: cursor.updatedAt,
+      afterId: cursor.id,
+    });
+    const response = await fetch(`/api/catalog/updates?${params.toString()}`, {
+      cache: "no-cache",
+    });
+    if (!response.ok) {
+      throw new Error(`Catalog updates request failed with HTTP ${response.status}`);
+    }
+    const body = parseCatalogUpdatesResponse(await response.json());
+    courses.push(...body.courses);
+    cursor = body.nextCursor;
+    if (!body.hasMore) {
+      return { courses, cursor };
+    }
+  }
+
+  throw new Error("Catalog updates exceeded the pagination safety limit");
+}
+
+async function requestCourseRefresh(
+  course: Course,
+  catalogSessions: string[],
+): Promise<CourseRefreshResponse> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(`/api/course/${encodeURIComponent(course.code)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: course.id,
+        sectionCode: course.sectionCode,
+        sessions: catalogSessions,
+      }),
+    });
+    if (response.status === 202) {
+      if (attempt >= 3) {
+        throw new Error("Course refresh is still in progress");
+      }
+      const pending = (await response.json()) as CourseRefreshPendingResponse;
+      const retryAfter = response.headers.get("Retry-After");
+      const seconds = retryAfter === null ? Number.NaN : Number(retryAfter);
+      await delay(
+        1_000 *
+          (Number.isFinite(seconds)
+            ? seconds
+            : pending.retryAfterSeconds || 2),
+      );
+      continue;
+    }
+    if (!response.ok) {
+      throw new Error(`Refresh failed with HTTP ${response.status}`);
+    }
+    return parseCourseRefreshResponse(await response.json());
+  }
+  throw new Error("Course refresh is still in progress");
+}
+
+function parseCourseRefreshResponse(value: unknown): CourseRefreshResponse {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.course) ||
+    typeof value.course.id !== "string" ||
+    typeof value.updatedAt !== "string" ||
+    typeof value.cached !== "boolean"
+  ) {
+    throw new Error("Course refresh response has an unexpected shape");
+  }
+  return value as unknown as CourseRefreshResponse;
+}
+
+function parseCatalogUpdatesResponse(value: unknown): CatalogUpdatesResponse {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.sessions) ||
+    !Array.isArray(value.courses) ||
+    !isRecord(value.nextCursor) ||
+    typeof value.nextCursor.updatedAt !== "string" ||
+    typeof value.nextCursor.id !== "string" ||
+    typeof value.hasMore !== "boolean"
+  ) {
+    throw new Error("Catalog updates response has an unexpected shape");
+  }
+  return value as unknown as CatalogUpdatesResponse;
+}
+
+function mergeCourses(base: readonly Course[], updates: readonly Course[]): Course[] {
+  if (updates.length === 0) {
+    return [...base];
+  }
+  const merged = [...base];
+  const byId = new Map(merged.map((course, index) => [course.id, index]));
+
+  for (const update of updates) {
+    let index = byId.get(update.id);
+    if (index === undefined) {
+      index = merged.findIndex((candidate) => sameOffering(candidate, update));
+    }
+    if (index >= 0) {
+      const previous = merged[index];
+      merged[index] = update;
+      if (previous && previous.id !== update.id) {
+        byId.delete(previous.id);
+      }
+      byId.set(update.id, index);
+    } else {
+      byId.set(update.id, merged.length);
+      merged.push(update);
+    }
+  }
+  return merged;
+}
+
+function laterCursor(
+  current: CatalogDeltaCursor | null,
+  candidate: CatalogDeltaCursor,
+): CatalogDeltaCursor {
+  if (!current) {
+    return candidate;
+  }
+  const comparison = candidate.updatedAt.localeCompare(current.updatedAt);
+  if (comparison > 0 || (comparison === 0 && candidate.id > current.id)) {
+    return candidate;
+  }
+  return current;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function deriveDepartments(courses: readonly Course[]): CatalogDepartment[] {

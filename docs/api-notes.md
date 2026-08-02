@@ -10,16 +10,36 @@ The University of Toronto Timetable Builder API is available server-side at `htt
 
 `POST /getPageableCourses` has a server-side `pageSize` hard cap of 20. A full ARTSC Fall-Winter scrape for `20269`, `20271`, and `20269-20271` is about 3,751 courses, or roughly 188 page requests.
 
-The scraper should run in chunks:
+The scraper runs in D1-backed chunks:
 
-- Store progress in a KV cursor: sessions, division, current page, total if known, and scrape artifact id.
-- Process at most about 40 TTB pages per invocation to stay below Cloudflare free-plan limits, especially the 50-subrequest ceiling.
-- Resume from cron or `POST /api/admin/scrape`; allow `reset` to discard the cursor and start from page 1.
+- Store progress, leases, failures, and timestamps in `scrape_runs`; only one running row is allowed per session set.
+- Process at most 25 TTB pages and 45 upstream attempts per invocation, leaving room below Cloudflare's external-subrequest ceiling.
+- Resume from cron or `POST /api/admin/scrape`; `reset` abandons the active run and starts from page 1.
 - Detect completion when a page returns fewer than 20 courses, or when the known `total` has been consumed.
+- Commit each page's course upserts and progress update in one D1 batch transaction.
 
 No rate limit was observed in testing, but bursts should stay modest. Avoid proxying bulk user traffic live when a nightly artifact is enough.
 
-The Cloudflare cron trigger is declared in `alchemy.run.ts` and handled by `apps/web/src/server.ts`, which delegates HTTP traffic to TanStack Start's default server entry and handles the Workers `scheduled` event by running one scrape chunk with `env.SESSIONS`.
+The Cloudflare cron trigger is declared in `alchemy.run.ts` and handled by `apps/web/src/server.ts`. It resumes active work hourly and starts complete runs on a 24-hour cadence based on the prior successful run's start time.
+
+## Catalog publication and deltas
+
+Complete artifacts are gzip-compressed and stored under versioned KV blob keys.
+A small manifest points to the active and previous versions so readers can fall
+back while KV changes propagate. The legacy uncompressed key remains readable
+during rollout. Catalog responses use a weak ETag and accept both weak and
+strong `If-None-Match` forms.
+
+Every scraper page updates complete course JSON in D1. `GET
+/api/catalog/updates` exposes rows newer than a `(updated_at, id)` cursor in
+pages of 500. Clients merge these deltas with the base catalog and persist the
+result in IndexedDB.
+
+`POST /api/course/{code}` performs a shared durable refresh. It replaces the
+entire course payload—including rooms, times, instructors, section topology,
+requisites, notes, enrolment controls, and seat/waitlist state—while preserving
+the row's scrape-run ownership. Refreshes are limited per IP and have a
+per-course 60-second cooldown.
 
 ## TTB semantics
 
