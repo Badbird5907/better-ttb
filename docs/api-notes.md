@@ -61,10 +61,51 @@ Future terms should be configured from `GET /reference-data`, not guessed from t
 
 ## Buildings
 
-The primary buildings dataset is vendored rather than loaded from Concept3D at runtime. Provenance:
+The primary buildings dataset is vendored rather than loaded from any upstream service at runtime.
+The app reads `apps/web/src/data/buildings.json`; its map, generator, walk connector, and
+`/api/walk-route` validation all resolve building codes from that file.
+
+Maintenance provenance and resolution order:
 
 - `cobalt-uoft/datasets`, filtered to UTSG buildings.
-- Hand patches for post-2017 buildings and known naming/code gaps.
-- Concept3D behind `map.utoronto.ca` can be used as reference material for one-off refreshes.
+- TTB meeting `buildingUrl` IDs joined to the Concept3D locations API.
+- Reviewed overrides in `tools/building-overrides.json` for known code/source gaps.
+- The LSM classroom directory for supplemental building codes, names, and addresses.
+- OpenStreetMap Nominatim for new LSM buildings that lack Concept3D IDs.
+
+`tools/refresh-buildings.mjs` writes a review artifact to
+`tools/buildings.refreshed.json`; it never changes the app dataset directly. The refresh fails
+before publishing the artifact when a geographic code cannot be resolved. Known non-geographic
+TTB encodings, currently `ON` + `LINE`, are reported separately and excluded from the geographic
+dataset.
+
+LSM is a useful but incomplete source: it lists centrally managed classroom buildings and rooms,
+not every UTSG location, and it does not provide coordinates. The refresh only fetches an LSM
+building detail page when a new code needs metadata for geocoding.
+
+Nominatim is maintenance-only and is never called by the application. The script:
+
+- sends an identifying `better-ttb-building-refresh` User-Agent;
+- uses a Canada-only, UTSG-bounded search;
+- accepts only one strong building-name match and fails ambiguous results for review;
+- runs requests sequentially with at least 1.1 seconds between cache misses;
+- stores responses in `tools/nominatim-cache.json`, retaining positive results and retrying
+  negative results only after 30 days; and
+- allows the provider base URL to be changed with `NOMINATIM_BASE_URL`.
+
+The public Nominatim service is capacity-constrained. Keep this as a manually invoked, cached
+maintenance task and follow the current policy at
+`https://operations.osmfoundation.org/policies/nominatim/`. Nominatim/OpenStreetMap data is ODbL
+licensed and requires OpenStreetMap attribution.
+
+Maintenance sequence:
+
+1. Run `pnpm buildings:refresh`.
+2. Review `tools/buildings.refreshed.json` and the printed resolution report.
+3. Copy the reviewed file to `apps/web/src/data/buildings.json`.
+4. Run `pnpm buildings:matrix`.
+5. Review and copy `tools/walk-matrix.json` to `apps/web/src/data/walk-matrix.json`.
+6. Run tests, typecheck, and build; the data tests require the building and matrix code lists to
+   match exactly.
 
 Concept3D's observed public embedded key is `0001085cc708b9cef47080f064612ca5`. Treat it as unofficial and unstable.

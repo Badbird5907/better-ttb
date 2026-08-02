@@ -1,6 +1,9 @@
 import { walkMinutes, type Coordinates } from "@better-ttb/generator";
 import type { DayNumber, MeetingTime } from "@better-ttb/shared";
-import { UOFT_TRANSFER_GRACE_MINUTES } from "@better-ttb/shared";
+import {
+  isNonGeographicMeetingBuilding,
+  UOFT_TRANSFER_GRACE_MINUTES,
+} from "@better-ttb/shared";
 
 import { lookupWalkSeconds } from "@/lib/walk-matrix";
 
@@ -117,7 +120,7 @@ export function buildDayItinerary(
 
       const buildingCode = meeting.building.buildingCode.trim();
 
-      if (!buildingCode) {
+      if (!buildingCode || isNonGeographicMeetingBuilding(meeting.building)) {
         // Fully online / no assigned room: nothing to place on the map.
         return;
       }

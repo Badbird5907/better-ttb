@@ -4,7 +4,7 @@ import type {} from "@tanstack/react-start";
 import buildingsData from "@/data/buildings.json";
 import { bindings } from "@/server/env";
 
-interface BuildingRecord {
+export interface BuildingRecord {
   code: string;
   lat: number;
   lng: number;
@@ -21,6 +21,10 @@ const BUILDINGS_BY_CODE = new Map<string, BuildingRecord>(
   (buildingsData as BuildingRecord[]).map((building) => [building.code, building]),
 );
 
+export function lookupBuildingRecord(code: string): BuildingRecord | null {
+  return BUILDINGS_BY_CODE.get(code.trim().toUpperCase()) ?? null;
+}
+
 const OSRM_BASE = "https://routing.openstreetmap.de/routed-foot/route/v1/foot";
 
 export const Route = createFileRoute("/api/walk-route")({
@@ -31,8 +35,8 @@ export const Route = createFileRoute("/api/walk-route")({
         const from = (url.searchParams.get("from") ?? "").trim().toUpperCase();
         const to = (url.searchParams.get("to") ?? "").trim().toUpperCase();
 
-        const origin = BUILDINGS_BY_CODE.get(from);
-        const destination = BUILDINGS_BY_CODE.get(to);
+        const origin = lookupBuildingRecord(from);
+        const destination = lookupBuildingRecord(to);
 
         if (!origin || !destination) {
           return Response.json({ error: "invalid_building_code" }, { status: 400 });

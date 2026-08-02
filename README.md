@@ -102,6 +102,12 @@ data survive reload before the next complete catalog publication.
 Back-to-back class walkability uses real pedestrian durations rather than
 straight-line estimates:
 
+- `apps/web/src/data/buildings.json` is the runtime source of truth for building
+  names and coordinates. It is maintained offline from the original Cobalt
+  dataset, TTB-linked Concept3D locations, reviewed overrides, and the LSM
+  classroom directory. New LSM-only buildings are geocoded through a cached,
+  bounded Nominatim maintenance lookup; the deployed app does not contact these
+  sources.
 - `tools/walk-matrix.json` (vendored to `apps/web/src/data/walk-matrix.json`) is
   a precomputed `codes × codes` matrix of foot-profile walking seconds between
   every UTSG building, generated from the OSRM foot profile at
@@ -117,4 +123,6 @@ straight-line estimates:
   feasibility is judged against `(next listed start + 10 min) − prev listed end`.
 
 Routing and matrix data derive from OpenStreetMap (© OpenStreetMap
-contributors, ODbL) via OSRM.
+contributors, ODbL) via OSRM. Coordinates resolved through Nominatim carry the
+same OpenStreetMap attribution. Detailed source precedence, caching policy, and
+the refresh procedure are documented in `docs/api-notes.md`.

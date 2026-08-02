@@ -88,6 +88,39 @@ describe("WeekGrid", () => {
     expect(html).toContain("text-white");
   });
 
+  it("renders the TL-to-BF back-to-back transfer as a red twelve-minute walk", () => {
+    const lawsonBlock: TimetableBlock = {
+      ...block,
+      id: "POL106H1:F:TUT:TUT1002:0",
+      sectionKey: "POL106H1:F:TUT:TUT1002",
+      courseKey: "POL106H1:F",
+      courseCode: "POL106H1",
+      courseName: "Contemporary Challenges to Democracy",
+      teachMethod: "TUT",
+      sectionName: "TUT1002",
+      room: "TL 1013",
+      buildingCode: "TL",
+    };
+    const bancroftBlock = nextBackToBackBlock({
+      id: "MAT224H1:F:TUT:TUT0204:0",
+      sectionKey: "MAT224H1:F:TUT:TUT0204",
+      courseKey: "MAT224H1:F",
+      courseCode: "MAT224H1",
+      courseName: "Linear Algebra II",
+      teachMethod: "TUT",
+      sectionName: "TUT0204",
+      room: "BF 323",
+      buildingCode: "BF",
+    });
+    const html = renderToStaticMarkup(
+      React.createElement(WeekGrid, { blocks: [lawsonBlock, bancroftBlock] }),
+    );
+
+    expect(html).toContain("12 min");
+    expect(html).toContain("Walk TL -&gt; BF, ~12 min");
+    expect(html).toContain("text-red-400");
+  });
+
   it.each([
     ["SS", "7 min", "text-amber-400"],
     ["AH", "15 min", "text-red-400"],

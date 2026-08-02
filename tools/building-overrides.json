@@ -1,0 +1,11 @@
+{
+  "ON": {
+    "nonGeographic": true
+  },
+  "RO": {
+    "name": "Royal Ontario Museum",
+    "shortName": "ROM",
+    "address": "100 Queen's Park, Toronto",
+    "concept3dId": 497525
+  }
+}

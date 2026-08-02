@@ -1,88 +1,151 @@
 /**
- * Refresh apps/web/src/data/buildings.json from authoritative sources:
- * 1. Scraped TTB catalog: every meeting's buildingUrl embeds its Concept3D
- *    location id (map.utoronto.ca/?id=1809#!m/<id>) -> buildingCode -> id map.
- * 2. Concept3D locations API (the live map.utoronto.ca backend) -> id -> lat/lng/name.
- * Falls back to the existing vendored entry for codes without a resolvable id.
- * Writes tools/buildings.refreshed.json + prints a diff report (does NOT
- * overwrite the app dataset; review then copy).
+ * Refresh the vendored UTSG building dataset from maintenance-only sources.
+ *
+ * Resolution order:
+ * 1. Explicit non-geographic override.
+ * 2. TTB meeting buildingUrl -> Concept3D location.
+ * 3. Explicit reviewed coordinate / Concept3D override.
+ * 4. Existing vendored building.
+ * 5. LSM building metadata -> cached, bounded Nominatim lookup.
+ *
+ * The app never calls these services at runtime. This script writes the review
+ * artifact tools/buildings.refreshed.json only when every geographic building
+ * code is resolved.
  */
 import { readFile, writeFile } from "node:fs/promises";
 
-const CATALOG_URL = "https://ttb.evanyu.dev/api/catalog";
-const C3D_URL =
+import {
+  collectCatalogBuildingUsage,
+  createCachedNominatimGeocoder,
+  parseLsmBuildingList,
+  parseLsmBuildingPage,
+  resolveBuildingRecords,
+} from "./building-refresh-lib.mjs";
+
+const CATALOG_URL = process.env.BUILDING_CATALOG_URL ?? "https://ttb.evanyu.dev/api/catalog";
+const CONCEPT3D_URL =
+  process.env.CONCEPT3D_URL ??
   "https://api.concept3d.com/locations?map=1809&key=0001085cc708b9cef47080f064612ca5";
+const LSM_URL =
+  process.env.LSM_BUILDINGS_URL ?? "https://lsm.utoronto.ca/webapp/f?p=210:1::::::";
+const NOMINATIM_BASE_URL =
+  process.env.NOMINATIM_BASE_URL ?? "https://nominatim.openstreetmap.org";
+const NOMINATIM_USER_AGENT =
+  process.env.NOMINATIM_USER_AGENT ??
+  "better-ttb-building-refresh/1.0 (+https://github.com/Badbird5907/better-ttb)";
 
-const existing = JSON.parse(
-  await readFile(new URL("../apps/web/src/data/buildings.json", import.meta.url), "utf8"),
+const existingPath = new URL("../apps/web/src/data/buildings.json", import.meta.url);
+const overridesPath = new URL("./building-overrides.json", import.meta.url);
+const cachePath = new URL("./nominatim-cache.json", import.meta.url);
+const outputPath = new URL("./buildings.refreshed.json", import.meta.url);
+
+const [existing, overrides, cache, catalog, concept3dLocations, lsmHtml] = await Promise.all([
+  readJson(existingPath),
+  readJson(overridesPath),
+  readJson(cachePath),
+  fetchJson(CATALOG_URL),
+  fetchJson(CONCEPT3D_URL),
+  fetchText(LSM_URL),
+]);
+
+const usage = collectCatalogBuildingUsage(catalog);
+const concept3dById = new Map(concept3dLocations.map((location) => [Number(location.id), location]));
+const lsmBuildings = parseLsmBuildingList(lsmHtml);
+const existingCodes = new Set(existing.map((building) => building.code.toUpperCase()));
+
+console.log(
+  `catalog courses: ${catalog.courses?.length ?? 0}; codes in use: ${usage.size}; ` +
+    `existing buildings: ${existing.length}; LSM buildings: ${lsmBuildings.size}`,
 );
-const existingByCode = new Map(existing.map((b) => [b.code, b]));
 
-const catalog = await (await fetch(CATALOG_URL)).json();
-const codeToC3dId = new Map();
-const codesInUse = new Set();
-for (const course of catalog.courses) {
-  for (const section of course.sections) {
-    for (const meeting of section.meetingTimes ?? []) {
-      const code = meeting.building?.buildingCode;
-      if (!code) continue;
-      codesInUse.add(code);
-      const match = meeting.building?.buildingUrl?.match(/[#?]!?m\/(\d+)/);
-      if (match) codeToC3dId.set(code, Number(match[1]));
-    }
+for (const [code, building] of lsmBuildings) {
+  const override = overrides[code] ?? {};
+  const liveConcept3dId = usage.get(code)?.concept3dId;
+  const hasLiveConcept3d = liveConcept3dId && concept3dById.has(liveConcept3dId);
+  const hasOverrideCoordinates =
+    override.concept3dId ||
+    (Number.isFinite(Number(override.lat)) && Number.isFinite(Number(override.lng)));
+
+  if (override.nonGeographic || existingCodes.has(code) || hasLiveConcept3d || hasOverrideCoordinates) {
+    continue;
   }
-}
-console.log(`codes in use by courses: ${codesInUse.size}, with concept3d id: ${codeToC3dId.size}`);
 
-const locations = await (await fetch(C3D_URL)).json();
-const byId = new Map(locations.map((loc) => [loc.id, loc]));
-
-const inTorontoBounds = (lat, lng) => lat > 43.6 && lat < 43.7 && lng > -79.42 && lng < -79.36;
-const result = [];
-const report = { fresh: 0, fallback: 0, added: [], moved: [], missing: [] };
-
-const allCodes = new Set([...codesInUse, ...existingByCode.keys()]);
-for (const code of [...allCodes].sort()) {
-  const old = existingByCode.get(code);
-  const c3dId = codeToC3dId.get(code);
-  const loc = c3dId ? byId.get(c3dId) : undefined;
-
-  if (loc && inTorontoBounds(loc.lat, loc.lng)) {
-    const name =
-      loc.name
-        ?.replace(/^Correct rendering of\s+/i, "")
-        .replace(/\s*\|\s*[A-Z0-9 &]+\s*$/, "")
-        .trim() || old?.name || code;
-    result.push({
-      code,
-      name,
-      shortName: old?.shortName ?? name,
-      address: old?.address ?? "",
-      lat: loc.lat,
-      lng: loc.lng,
-      source: `concept3d-live-${c3dId}`,
-    });
-    report.fresh += 1;
-    if (!old) report.added.push(code);
-    else {
-      const dist = Math.hypot((loc.lat - old.lat) * 111000, (loc.lng - old.lng) * 81000);
-      if (dist > 50) report.moved.push({ code, meters: Math.round(dist) });
-    }
-  } else if (old) {
-    result.push(old);
-    report.fallback += 1;
-  } else {
-    report.missing.push(code);
-  }
+  const pageHtml = await fetchText(lsmBuildingUrl(code));
+  lsmBuildings.set(code, parseLsmBuildingPage(pageHtml, code, building.name));
 }
 
-console.log(`fresh coords: ${report.fresh}, fallback to vendored: ${report.fallback}`);
-console.log("newly added codes:", report.added.join(", ") || "none");
-console.log("moved >50m:", JSON.stringify(report.moved));
-console.log("codes used by courses but unresolvable (no url id, not vendored):", report.missing.join(", ") || "none");
+const geocode = createCachedNominatimGeocoder({
+  cache,
+  baseUrl: NOMINATIM_BASE_URL,
+  userAgent: NOMINATIM_USER_AGENT,
+  onCacheUpdate: async (nextCache) => {
+    await writeJson(cachePath, nextCache);
+  },
+});
 
-await writeFile(
-  new URL("./buildings.refreshed.json", import.meta.url),
-  JSON.stringify(result, null, 2),
-);
-console.log(`wrote tools/buildings.refreshed.json (${result.length} buildings)`);
+const { records, report } = await resolveBuildingRecords({
+  existing,
+  usage,
+  lsmBuildings,
+  overrides,
+  concept3dById,
+  geocode,
+});
+
+printReport(report);
+
+if (report.unresolved.length > 0) {
+  throw new Error(
+    `Refusing to publish buildings.refreshed.json with unresolved geographic codes: ${report.unresolved
+      .map((entry) => entry.code)
+      .join(", ")}`,
+  );
+}
+
+await writeJson(outputPath, records);
+console.log(`wrote tools/buildings.refreshed.json (${records.length} buildings)`);
+
+function lsmBuildingUrl(code) {
+  const base = new URL(LSM_URL);
+  base.search = `?p=210:1:::::P1_BLDG:${encodeURIComponent(code)}`;
+  return base.toString();
+}
+
+async function readJson(url) {
+  return JSON.parse(await readFile(url, "utf8"));
+}
+
+async function writeJson(url, value) {
+  await writeFile(url, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!response.ok) {
+    throw new Error(`${url} returned HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
+  }
+  return await response.json();
+}
+
+async function fetchText(url) {
+  const response = await fetch(url, { headers: { Accept: "text/html" } });
+  if (!response.ok) {
+    throw new Error(`${url} returned HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
+  }
+  return await response.text();
+}
+
+function printReport(report) {
+  console.log(`resolved from current/override coordinates: ${report.resolved.length}`);
+  console.log(
+    "automatically geocoded:",
+    report.geocoded.map((entry) => `${entry.code} (${entry.osmType}/${entry.osmId})`).join(", ") ||
+      "none",
+  );
+  console.log(`existing vendored fallbacks: ${report.existing.length}`);
+  console.log("non-geographic codes:", report.nonGeographic.join(", ") || "none");
+  console.log(
+    "unresolved geographic codes:",
+    report.unresolved.map((entry) => `${entry.code} (${entry.reason})`).join(", ") || "none",
+  );
+}

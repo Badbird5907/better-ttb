@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "entries": {
+    "lawson centre toronto ontario canada": {
+      "fetchedAt": "2026-08-02T08:06:07.036Z",
+      "query": "Lawson Centre, Toronto, Ontario, Canada",
+      "results": [
+        {
+          "osm_type": "way",
+          "osm_id": "1545519650",
+          "lat": 43.6660807,
+          "lon": -79.3967084,
+          "name": "Lawson Centre for Sustainability",
+          "display_name": "Lawson Centre for Sustainability, Trinity Quad, University, Downtown, Toronto, Golden Horseshoe, Ontario, M5S 3K7, Canada"
+        }
+      ]
+    }
+  }
+}

@@ -234,6 +234,46 @@ describe("rule evaluation", () => {
     expect(tightWalk.candidates).toHaveLength(0);
   });
 
+  it("keeps ON LINE meetings in time rules but excludes them from campus and walking metrics", () => {
+    const onlineMeeting = meeting(1, ms(10), ms(11), { buildingCode: "ON" });
+    onlineMeeting.building.buildingRoomNumber = "LINE";
+    const online = course("ONL100H1", "F", [section("LEC0101", "LEC", [onlineMeeting])]);
+    const physical = course("PHY100H1", "F", [
+      section("LEC0101", "LEC", [meeting(1, ms(11), ms(12), { buildingCode: "BA" })]),
+    ]);
+
+    const result = generate([{ course: online }, { course: physical }], {
+      rules: [
+        {
+          id: "walk",
+          kind: "max-walk",
+          mode: "soft",
+          weight: 1,
+          maxWalkMinutes: 5,
+        },
+      ],
+      buildings: { BA: { lat: 43.65977, lng: -79.39708 } },
+      walkSeconds: { "ON|BA": 60 * 60 },
+    });
+
+    expect(result.candidates[0]?.extras.daysOnCampus.fall).toEqual([1]);
+    expect(result.candidates[0]?.extras.tightTransfers).toEqual([]);
+    expect(result.candidates[0]?.extras.earliestStart).toBe(ms(10));
+
+    const blocked = generate([{ course: online }], {
+      rules: [
+        {
+          id: "blocked-online",
+          kind: "blocked-times",
+          mode: "hard",
+          weight: 1,
+          windows: [{ day: 1, startMillis: ms(10), endMillis: ms(11) }],
+        },
+      ],
+    });
+    expect(blocked.candidates).toHaveLength(0);
+  });
+
   it("handles blocked windows, earliest/latest bounds, days off, and lunch breaks", () => {
     const blockedCourse = course("BLK100H1", "F", [
       section("LEC0101", "LEC", [meeting(1, ms(10), ms(11))]),
