@@ -13,6 +13,7 @@ import { ChevronDown, ChevronRight, Pin, PinOff, RefreshCw } from "lucide-react"
 import * as React from "react";
 
 import buildings from "@/data/buildings.json";
+import { claimCourseAutoRefresh } from "@/lib/use-catalog";
 import type { RequisiteGraph } from "@/lib/requisites/graph";
 import {
   enrolmentControlLineItems,
@@ -109,6 +110,22 @@ export function CourseDetailSheet({
   onOpenCourse?: (code: string) => void;
   graph?: RequisiteGraph | null;
 }) {
+  const openedCourseKey = course ? courseKey(course) : null;
+  const planSessionsKey = activePlan.sessions.join(",");
+  const onRefreshRef = React.useRef(onRefresh);
+  React.useEffect(() => {
+    onRefreshRef.current = onRefresh;
+  }, [onRefresh]);
+  React.useEffect(() => {
+    if (
+      course &&
+      openedCourseKey &&
+      claimCourseAutoRefresh(planSessionsKey, course.id, Date.now())
+    ) {
+      onRefreshRef.current(course);
+    }
+  }, [course?.id, openedCourseKey, planSessionsKey]);
+
   const chosenForCourse = course
     ? activePlan.pinned.find(
         (entry) =>

@@ -38,8 +38,9 @@ result in IndexedDB.
 `POST /api/course/{code}` performs a shared durable refresh. It replaces the
 entire course payload—including rooms, times, instructors, section topology,
 requisites, notes, enrolment controls, and seat/waitlist state—while preserving
-the row's scrape-run ownership. Refreshes are limited per IP and have a
-per-course 60-second cooldown.
+the row's scrape-run ownership. Refreshes have a per-course 30-minute freshness
+window. Fresh cached reads bypass the per-IP limiter; only the request that wins
+the refresh claim and contacts TTB consumes rate-limit capacity.
 
 ## TTB semantics
 

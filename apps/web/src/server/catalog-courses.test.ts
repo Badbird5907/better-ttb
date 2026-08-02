@@ -54,32 +54,89 @@ describe("durable course refresh", () => {
   it("returns a recently persisted course without another upstream fetch", async () => {
     const course = structuredClone(csc108Course) as Course;
     const getCourses = vi.fn();
+    const beforeUpstreamFetch = vi.fn();
     const harness = createCourseDb(course, {
-      liveRefreshedAt: "2026-07-10T12:59:30.000Z",
+      liveRefreshedAt: "2026-07-10T12:30:01.000Z",
     });
     const result = await refreshStoredCourse(
       { DB: harness.db },
       course.code,
       { id: course.id, sectionCode: course.sectionCode, sessions: ["20269"] },
-      { now: () => new Date("2026-07-10T13:00:00.000Z"), getCourses },
+      {
+        now: () => new Date("2026-07-10T13:00:00.000Z"),
+        getCourses,
+        beforeUpstreamFetch,
+      },
     );
     expect(result).toMatchObject({ status: 200, body: { cached: true } });
     expect(getCourses).not.toHaveBeenCalled();
+    expect(beforeUpstreamFetch).not.toHaveBeenCalled();
+  });
+
+  it("refreshes at the exact 30-minute boundary", async () => {
+    const course = structuredClone(csc108Course) as Course;
+    const getCourses = vi.fn(async () => lookupResponse(course));
+    const beforeUpstreamFetch = vi.fn(async () => undefined);
+    const harness = createCourseDb(course, {
+      liveRefreshedAt: "2026-07-10T12:30:00.000Z",
+    });
+    const result = await refreshStoredCourse(
+      { DB: harness.db },
+      course.code,
+      { id: course.id, sectionCode: course.sectionCode, sessions: ["20269"] },
+      {
+        now: () => new Date("2026-07-10T13:00:00.000Z"),
+        getCourses,
+        beforeUpstreamFetch,
+      },
+    );
+    expect(result).toMatchObject({ status: 200, body: { cached: false } });
+    expect(beforeUpstreamFetch).toHaveBeenCalledOnce();
+    expect(getCourses).toHaveBeenCalledOnce();
   });
 
   it("returns 202 while another refresh claim is active", async () => {
     const course = structuredClone(csc108Course) as Course;
     const harness = createCourseDb(course, { claimAvailable: false });
+    const beforeUpstreamFetch = vi.fn();
     const result = await refreshStoredCourse(
       { DB: harness.db },
       course.code,
       { id: course.id, sectionCode: course.sectionCode, sessions: ["20269"] },
-      { now: () => new Date("2026-07-10T13:00:00.000Z") },
+      {
+        now: () => new Date("2026-07-10T13:00:00.000Z"),
+        beforeUpstreamFetch,
+      },
     );
     expect(result).toEqual({
       status: 202,
       body: { status: "in_progress", retryAfterSeconds: 2 },
     });
+    expect(beforeUpstreamFetch).not.toHaveBeenCalled();
+  });
+
+  it("releases the refresh claim when admission fails", async () => {
+    const course = structuredClone(csc108Course) as Course;
+    const harness = createCourseDb(course);
+    const admissionError = new Error("rate limited");
+    const getCourses = vi.fn();
+
+    await expect(
+      refreshStoredCourse(
+        { DB: harness.db },
+        course.code,
+        { id: course.id, sectionCode: course.sectionCode, sessions: ["20269"] },
+        {
+          now: () => new Date("2026-07-10T13:00:00.000Z"),
+          getCourses,
+          beforeUpstreamFetch: async () => {
+            throw admissionError;
+          },
+        },
+      ),
+    ).rejects.toBe(admissionError);
+    expect(getCourses).not.toHaveBeenCalled();
+    expect(harness.liveRefreshClaimedAt).toBeNull();
   });
 
   it("keeps the persisted row id when the upstream offering id changes", async () => {
@@ -177,6 +234,7 @@ function createCourseDb(
   db: D1Database;
   persistedCourse: Course | null;
   scrapeRunId: number;
+  liveRefreshClaimedAt: string | null;
 } {
   const state = {
     persistedCourse: null as Course | null,
@@ -236,6 +294,24 @@ function createCourseDb(
       return state.persistedCourse;
     },
     scrapeRunId: state.scrapeRunId,
+    get liveRefreshClaimedAt() {
+      return row.live_refresh_claimed_at;
+    },
+  };
+}
+
+function lookupResponse(course: Course): TtbCourseLookupResponse {
+  return {
+    payload: {
+      pageableCourse: {
+        courses: [course],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+        direction: "asc",
+      },
+    },
+    status: [],
   };
 }
 

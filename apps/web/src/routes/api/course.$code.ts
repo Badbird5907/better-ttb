@@ -4,6 +4,7 @@ import type {} from "@tanstack/react-start";
 import { bindings, getCourseRefreshRateLimit } from "@/server/env";
 import { captureServerEvent } from "@/server/telemetry";
 import {
+  CourseRefreshAdmissionError,
   parseCourseRefreshRequest,
   refreshStoredCourse,
 } from "@/server/catalog-courses";
@@ -31,24 +32,6 @@ export const Route = createFileRoute("/api/course/$code")({
       },
       POST: async ({ params, request }) => {
         const rateLimitKey = request.headers.get("CF-Connecting-IP") ?? "local";
-        let rateLimit: { success: boolean };
-        try {
-          rateLimit = await getCourseRefreshRateLimit().limit({ key: rateLimitKey });
-        } catch (error) {
-          console.error("Course refresh rate limiter unavailable", {
-            message: error instanceof Error ? error.message : String(error),
-          });
-          return Response.json(
-            { error: "rate_limit_unavailable" },
-            { status: 503, headers: { "Retry-After": "60" } },
-          );
-        }
-        if (!rateLimit.success) {
-          return Response.json(
-            { error: "rate_limited" },
-            { status: 429, headers: { "Retry-After": "60" } },
-          );
-        }
 
         let parsed: unknown;
         try {
@@ -62,7 +45,28 @@ export const Route = createFileRoute("/api/course/$code")({
         }
 
         try {
-          const result = await refreshStoredCourse(bindings, params.code, input);
+          const result = await refreshStoredCourse(bindings, params.code, input, {
+            beforeUpstreamFetch: async () => {
+              let rateLimit: { success: boolean };
+              try {
+                rateLimit = await getCourseRefreshRateLimit().limit({
+                  key: rateLimitKey,
+                });
+              } catch (error) {
+                console.error("Course refresh rate limiter unavailable", {
+                  message: error instanceof Error ? error.message : String(error),
+                });
+                throw new CourseRefreshAdmissionError(
+                  503,
+                  "rate_limit_unavailable",
+                  60,
+                );
+              }
+              if (!rateLimit.success) {
+                throw new CourseRefreshAdmissionError(429, "rate_limited", 60);
+              }
+            },
+          });
           if (!result) {
             return Response.json({ error: "catalog_course_not_found" }, { status: 404 });
           }
@@ -80,6 +84,15 @@ export const Route = createFileRoute("/api/course/$code")({
               : {}),
           });
         } catch (error) {
+          if (error instanceof CourseRefreshAdmissionError) {
+            return Response.json(
+              { error: error.code },
+              {
+                status: error.status,
+                headers: { "Retry-After": String(error.retryAfterSeconds) },
+              },
+            );
+          }
           if (error instanceof TtbApiError) {
             return upstreamErrorResponse(error);
           }

@@ -250,6 +250,86 @@ describe("D1-backed catalog scraper", () => {
     expect(db.courses.size).toBe(1);
   });
 
+  it("preserves a detailed refresh completed after the scrape run started", async () => {
+    const db = new MemoryD1();
+    const kv = new MemoryKv();
+    const run = db.seedRun({
+      started_at: "2026-07-10T12:00:00.000Z",
+      status: "running",
+    });
+    const bulk = makeCourse(1);
+    bulk.sections[0]!.currentEnrolment = 10;
+    const detailed = structuredClone(bulk) as Course;
+    detailed.sections[0]!.currentEnrolment = 99;
+    detailed.sections[0]!.meetingTimes[0]!.building.buildingRoomNumber = "1220";
+    db.courses.set(
+      detailed.id,
+      storedCourseRow(detailed, {
+        scrapeRunId: 99,
+        updatedAt: "2026-07-10T12:30:00.000Z",
+        liveRefreshedAt: "2026-07-10T12:30:00.000Z",
+      }),
+    );
+
+    const result = await runScrapeChunk(
+      { sessions: ["20269"], maxPages: 1 },
+      makeDeps(
+        db,
+        kv,
+        createPageFetch([makePage([bulk], 1, 1)]),
+        "2026-07-10T13:00:00.000Z",
+      ),
+    );
+
+    expect(result.status).toBe("complete");
+    const row = db.courses.get(detailed.id);
+    expect(row?.scrape_run_id).toBe(run.id);
+    expect(row?.live_refreshed_at).toBe("2026-07-10T12:30:00.000Z");
+    expect((JSON.parse(row!.data_json) as Course).sections[0]?.currentEnrolment).toBe(
+      99,
+    );
+    const manifest = await readCatalogManifest(kv, ["20269"]);
+    const catalog = JSON.parse(
+      await gunzip(kv.binaryStore.get(manifest!.active.key)!),
+    ) as { courses: Course[] };
+    expect(catalog.courses[0]?.sections[0]?.meetingTimes[0]?.building.buildingRoomNumber).toBe(
+      "1220",
+    );
+  });
+
+  it("accepts a later scrape payload and clears an older live freshness marker", async () => {
+    const db = new MemoryD1();
+    const bulk = makeCourse(1);
+    bulk.sections[0]!.currentEnrolment = 10;
+    const oldDetailed = structuredClone(bulk) as Course;
+    oldDetailed.sections[0]!.currentEnrolment = 99;
+    db.courses.set(
+      oldDetailed.id,
+      storedCourseRow(oldDetailed, {
+        scrapeRunId: 99,
+        updatedAt: "2026-07-10T12:30:00.000Z",
+        liveRefreshedAt: "2026-07-10T12:30:00.000Z",
+      }),
+    );
+
+    const result = await runScrapeChunk(
+      { sessions: ["20269"], maxPages: 1 },
+      makeDeps(
+        db,
+        new MemoryKv(),
+        createPageFetch([makePage([bulk], 1, 1)]),
+        "2026-07-10T13:00:00.000Z",
+      ),
+    );
+
+    expect(result.status).toBe("complete");
+    const row = db.courses.get(oldDetailed.id);
+    expect(row?.live_refreshed_at).toBeNull();
+    expect((JSON.parse(row!.data_json) as Course).sections[0]?.currentEnrolment).toBe(
+      10,
+    );
+  });
+
   it("accumulates divisional indicators between chunks", async () => {
     const db = new MemoryD1();
     const kv = new MemoryKv();
@@ -374,6 +454,8 @@ interface StoredCourseRow {
   data_json: string;
   updated_at: string;
   scrape_run_id: number;
+  live_refreshed_at: string | null;
+  live_refresh_claimed_at: string | null;
 }
 
 class MemoryD1 implements ScraperDatabase {
@@ -526,16 +608,32 @@ class MemoryStatement implements ScraperStatement {
       ) {
         return d1Result<T>([], 0);
       }
+      const existing = this.db.courses.get(String(this.values[0]));
+      const runStartedAt = String(this.values[11]);
+      const preserveLive = Boolean(
+        existing?.live_refreshed_at &&
+          existing.live_refreshed_at >= runStartedAt,
+      );
       const row: StoredCourseRow = {
         id: String(this.values[0]),
         code: String(this.values[1]),
         section_code: String(this.values[2]),
         session: String(this.values[3]),
-        name: String(this.values[4]),
-        department: String(this.values[5]),
-        data_json: String(this.values[6]),
-        updated_at: String(this.values[7]),
+        name: preserveLive ? existing!.name : String(this.values[4]),
+        department: preserveLive
+          ? existing!.department
+          : String(this.values[5]),
+        data_json: preserveLive
+          ? existing!.data_json
+          : String(this.values[6]),
+        updated_at: preserveLive
+          ? existing!.updated_at
+          : String(this.values[7]),
         scrape_run_id: Number(this.values[8]),
+        live_refreshed_at: preserveLive
+          ? existing!.live_refreshed_at
+          : null,
+        live_refresh_claimed_at: existing?.live_refresh_claimed_at ?? null,
       };
       this.db.courses.set(row.id, row);
       return d1Result<T>([], 1);
@@ -618,6 +716,29 @@ class MemoryStatement implements ScraperStatement {
   private get normalized(): string {
     return this.query.replace(/\s+/g, " ").trim();
   }
+}
+
+function storedCourseRow(
+  course: Course,
+  options: {
+    scrapeRunId: number;
+    updatedAt: string;
+    liveRefreshedAt: string | null;
+  },
+): StoredCourseRow {
+  return {
+    id: course.id,
+    code: course.code,
+    section_code: course.sectionCode,
+    session: "20269",
+    name: course.name,
+    department: course.department.name,
+    data_json: JSON.stringify(course),
+    updated_at: options.updatedAt,
+    scrape_run_id: options.scrapeRunId,
+    live_refreshed_at: options.liveRefreshedAt,
+    live_refresh_claimed_at: null,
+  };
 }
 
 function d1Result<T = unknown>(results: T[] = [], changes = 0): D1Result<T> {

@@ -26,7 +26,7 @@ import * as React from "react";
 
 import { AppHeader } from "@/components/app-header";
 import { MobileNav } from "@/components/app-nav";
-import { useCatalogForSessions } from "@/lib/use-catalog";
+import { useCatalogForPlan } from "@/lib/use-catalog";
 import {
   DAY_FILTERS,
   DEFAULT_SEARCH_FILTERS,
@@ -160,12 +160,15 @@ function Home() {
   const [refreshingCourseKey, setRefreshingCourseKey] = React.useState<
     string | null
   >(null);
-  const [refreshError, setRefreshError] = React.useState<string | null>(null);
+  const [refreshError, setRefreshError] = React.useState<{
+    courseKey: string;
+    message: string;
+  } | null>(null);
   const [referenceSessions, setReferenceSessions] = React.useState<string[][]>(
     [],
   );
 
-  useCatalogForSessions(activePlan.sessions);
+  useCatalogForPlan(activePlan);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -308,13 +311,15 @@ function Home() {
     try {
       await refreshCatalogCourse(course);
     } catch (refreshErrorValue) {
-      setRefreshError(
-        refreshErrorValue instanceof Error
-          ? refreshErrorValue.message
-          : String(refreshErrorValue),
-      );
+      setRefreshError({
+        courseKey: key,
+        message:
+          refreshErrorValue instanceof Error
+            ? refreshErrorValue.message
+            : String(refreshErrorValue),
+      });
     } finally {
-      setRefreshingCourseKey(null);
+      setRefreshingCourseKey((current) => (current === key ? null : current));
     }
   }
 
@@ -510,7 +515,11 @@ function Home() {
           course={selectedCourse}
           activePlan={activePlan}
           planSelectedSections={planSelectedSections}
-          refreshError={refreshError}
+          refreshError={
+            selectedCourseKey === refreshError?.courseKey
+              ? refreshError.message
+              : null
+          }
           refreshing={selectedCourseKey === refreshingCourseKey}
           pinned={
             selectedCourse
