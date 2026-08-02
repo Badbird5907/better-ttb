@@ -17,7 +17,7 @@ import * as React from "react";
 import { AppHeader } from "@/components/app-header";
 import { MobileNav } from "@/components/app-nav";
 import { CourseDetailSheet } from "@/components/course/course-detail-sheet";
-import { useCatalogForSessions } from "@/lib/use-catalog";
+import { useCatalogForPlan } from "@/lib/use-catalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -106,7 +106,7 @@ function TreeRoute() {
     () => activePlanFromState({ plans, activePlanId }),
     [activePlanId, plans],
   );
-  useCatalogForSessions(activePlan.sessions);
+  useCatalogForPlan(activePlan);
 
   const graph = useRequisiteGraph(catalog?.courses);
 

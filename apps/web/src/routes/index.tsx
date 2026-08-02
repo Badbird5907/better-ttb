@@ -26,7 +26,7 @@ import * as React from "react";
 
 import { AppHeader } from "@/components/app-header";
 import { MobileNav } from "@/components/app-nav";
-import { useCatalogForSessions } from "@/lib/use-catalog";
+import { useCatalogForPlan } from "@/lib/use-catalog";
 import {
   DAY_FILTERS,
   DEFAULT_SEARCH_FILTERS,
@@ -165,7 +165,7 @@ function Home() {
     [],
   );
 
-  useCatalogForSessions(activePlan.sessions);
+  useCatalogForPlan(activePlan);
 
   React.useEffect(() => {
     let cancelled = false;

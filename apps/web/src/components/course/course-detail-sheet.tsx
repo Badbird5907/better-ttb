@@ -109,6 +109,17 @@ export function CourseDetailSheet({
   onOpenCourse?: (code: string) => void;
   graph?: RequisiteGraph | null;
 }) {
+  const openedCourseKey = course ? courseKey(course) : null;
+  const onRefreshRef = React.useRef(onRefresh);
+  React.useEffect(() => {
+    onRefreshRef.current = onRefresh;
+  }, [onRefresh]);
+  React.useEffect(() => {
+    if (course && openedCourseKey) {
+      onRefreshRef.current(course);
+    }
+  }, [openedCourseKey]);
+
   const chosenForCourse = course
     ? activePlan.pinned.find(
         (entry) =>

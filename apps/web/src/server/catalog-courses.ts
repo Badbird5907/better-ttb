@@ -12,9 +12,20 @@ import type { Env } from "./env";
 import { sessionKey } from "./catalog-storage";
 import { getCoursesByCode } from "./ttb-client";
 
-const LIVE_REFRESH_COOLDOWN_MS = 60_000;
+const LIVE_REFRESH_COOLDOWN_MS = 30 * 60_000;
 const LIVE_REFRESH_CLAIM_MS = 120_000;
 const DELTA_LIMIT = 500;
+
+export class CourseRefreshAdmissionError extends Error {
+  constructor(
+    readonly status: 429 | 503,
+    readonly code: "rate_limited" | "rate_limit_unavailable",
+    readonly retryAfterSeconds: number,
+  ) {
+    super(code);
+    this.name = "CourseRefreshAdmissionError";
+  }
+}
 
 interface StoredCourseRow {
   id: string;
@@ -40,6 +51,7 @@ export type RefreshCourseResult =
 interface RefreshCourseOptions {
   now?: () => Date;
   getCourses?: typeof getCoursesByCode;
+  beforeUpstreamFetch?: () => Promise<void>;
 }
 
 export function parseCourseRefreshRequest(
@@ -142,6 +154,7 @@ export async function refreshStoredCourse(
   }
 
   try {
+    await options.beforeUpstreamFetch?.();
     const response = await (options.getCourses ?? getCoursesByCode)(
       code,
       input.sectionCode,

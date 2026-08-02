@@ -134,7 +134,7 @@ import {
   type TimetableBlock,
 } from "@/lib/timetable";
 import { cn } from "@/lib/utils";
-import { useCatalogForSessions } from "@/lib/use-catalog";
+import { useCatalogForPlan } from "@/lib/use-catalog";
 import { useCatalogStore } from "@/stores/catalog";
 import {
   activePlanFromState,
@@ -222,7 +222,7 @@ function TimetableRoute() {
   const [slotPicker, setSlotPicker] = React.useState<SlotPickerState | null>(null);
   const importInputRef = React.useRef<HTMLInputElement | null>(null);
   const workerRef = React.useRef<Worker | null>(null);
-  useCatalogForSessions(activePlan.sessions);
+  useCatalogForPlan(activePlan);
 
   React.useEffect(
     () => () => {

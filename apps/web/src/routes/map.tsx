@@ -22,7 +22,7 @@ import {
   selectedSectionsFromPlan,
   type Term,
 } from "@/lib/timetable";
-import { useCatalogForSessions } from "@/lib/use-catalog";
+import { useCatalogForPlan } from "@/lib/use-catalog";
 import { cn } from "@/lib/utils";
 import { useCatalogStore } from "@/stores/catalog";
 import { activePlanFromState, usePlanStore } from "@/stores/plan";
@@ -66,7 +66,7 @@ function MapRoute() {
     () => activePlanFromState({ plans, activePlanId }),
     [activePlanId, plans],
   );
-  useCatalogForSessions(activePlan.sessions);
+  useCatalogForPlan(activePlan);
 
   const coursesByKey = React.useMemo(() => {
     const map = new Map<string, Course>();

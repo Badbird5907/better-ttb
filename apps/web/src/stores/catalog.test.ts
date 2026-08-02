@@ -2,7 +2,7 @@ import type { Course, DivisionalEnrolmentIndicators } from "@better-ttb/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { csc108Course } from "@/server/__fixtures__/ttb-pageable-csc108";
-import { useCatalogStore } from "./catalog";
+import { CourseRefreshRequestError, useCatalogStore } from "./catalog";
 
 const catalogCache = vi.hoisted(() => new Map<string, unknown>());
 
@@ -190,7 +190,13 @@ describe("catalog store", () => {
         cached: false,
       })) as typeof fetch;
 
-    await useCatalogStore.getState().refreshCourse(base);
+    const response = await useCatalogStore.getState().refreshCourse(base);
+
+    expect(response).toMatchObject({
+      course: { id: winter.id },
+      updatedAt: "2026-07-10T13:00:00.000Z",
+      cached: false,
+    });
 
     const refreshed = useCatalogStore.getState().catalog?.courses[0];
     expect(refreshed?.sections).toHaveLength(2);
@@ -271,6 +277,56 @@ describe("catalog store", () => {
     expect(
       (catalogCache.get("20269") as { deltaCursor?: unknown }).deltaCursor,
     ).toEqual(previousCursor);
+  });
+
+  it("deduplicates concurrent refreshes for the same session and course", async () => {
+    const base = structuredClone(csc108Course) as Course;
+    globalThis.fetch = mockCatalogFetch(makeArtifact());
+    await useCatalogStore.getState().loadCatalog(["20269"]);
+
+    let resolveRefresh!: (response: Response) => void;
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const first = useCatalogStore.getState().refreshCourse(base);
+    const second = useCatalogStore.getState().refreshCourse(base);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    resolveRefresh(
+      Response.json({
+        course: base,
+        updatedAt: "2026-07-10T13:00:00.000Z",
+        cached: true,
+      }),
+    );
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toEqual(secondResult);
+    expect(firstResult.cached).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces refresh status and Retry-After metadata", async () => {
+    const base = structuredClone(csc108Course) as Course;
+    globalThis.fetch = mockCatalogFetch(makeArtifact());
+    await useCatalogStore.getState().loadCatalog(["20269"]);
+    globalThis.fetch = vi.fn(async () =>
+      Response.json(
+        { error: "rate_limited" },
+        { status: 429, headers: { "Retry-After": "45" } },
+      ),
+    ) as typeof fetch;
+
+    const refresh = useCatalogStore.getState().refreshCourse(base);
+    await expect(refresh).rejects.toBeInstanceOf(CourseRefreshRequestError);
+    await refresh.catch((error: unknown) => {
+      expect(error).toMatchObject({ status: 429, retryAfterSeconds: 45 });
+    });
   });
 
   it("caps Retry-After delays before retrying a claimed refresh", async () => {

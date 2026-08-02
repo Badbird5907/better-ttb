@@ -199,6 +199,7 @@ export async function runScrapeChunk(
         pageableCourse.courses,
         key,
         run.id,
+        run.started_at,
         updatedAt,
         pagesDone,
         total,
@@ -439,6 +440,7 @@ async function commitPage(
   courses: Course[],
   sessions: string,
   runId: number,
+  runStartedAt: string,
   updatedAt: string,
   pagesDone: number,
   totalCourses: number,
@@ -459,11 +461,27 @@ async function commitPage(
       code = excluded.code,
       section_code = excluded.section_code,
       session = excluded.session,
-      name = excluded.name,
-      department = excluded.department,
-      data_json = excluded.data_json,
-      updated_at = excluded.updated_at,
-      scrape_run_id = excluded.scrape_run_id
+      name = CASE
+        WHEN courses.live_refreshed_at >= ? THEN courses.name
+        ELSE excluded.name
+      END,
+      department = CASE
+        WHEN courses.live_refreshed_at >= ? THEN courses.department
+        ELSE excluded.department
+      END,
+      data_json = CASE
+        WHEN courses.live_refreshed_at >= ? THEN courses.data_json
+        ELSE excluded.data_json
+      END,
+      updated_at = CASE
+        WHEN courses.live_refreshed_at >= ? THEN courses.updated_at
+        ELSE excluded.updated_at
+      END,
+      scrape_run_id = excluded.scrape_run_id,
+      live_refreshed_at = CASE
+        WHEN courses.live_refreshed_at >= ? THEN courses.live_refreshed_at
+        ELSE NULL
+      END
   `;
   const statements = courses.map((course) =>
     db
@@ -480,6 +498,11 @@ async function commitPage(
         runId,
         runId,
         leaseExpiresAt,
+        runStartedAt,
+        runStartedAt,
+        runStartedAt,
+        runStartedAt,
+        runStartedAt,
       ),
   );
   statements.push(
