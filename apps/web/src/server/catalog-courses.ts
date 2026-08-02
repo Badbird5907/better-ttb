@@ -50,20 +50,19 @@ export function parseCourseRefreshRequest(
     typeof value.id !== "string" ||
     value.id.trim().length === 0 ||
     typeof value.sectionCode !== "string" ||
+    value.sectionCode.trim().length === 0 ||
     !Array.isArray(value.sessions) ||
     !value.sessions.every((session) => typeof session === "string")
   ) {
     return null;
   }
-  const sessions = value.sessions
-    .map((session) => session.trim())
-    .filter((session) => session.length > 0);
+  const sessions = normalizeCourseSessions(value.sessions);
   if (sessions.length === 0) {
     return null;
   }
   return {
     id: value.id.trim(),
-    sectionCode: value.sectionCode,
+    sectionCode: value.sectionCode.trim(),
     sessions,
   };
 }
@@ -75,8 +74,13 @@ export async function refreshStoredCourse(
   options: RefreshCourseOptions = {},
 ): Promise<RefreshCourseResult | null> {
   const now = options.now?.() ?? new Date();
-  const key = sessionKey(input.sessions);
-  let row = await readStoredCourse(env.DB, input.id, code, input.sectionCode, key);
+  let row = await readStoredCourse(
+    env.DB,
+    input.id,
+    code,
+    input.sectionCode,
+    input.sessions,
+  );
   if (!row) {
     return null;
   }
@@ -108,13 +112,19 @@ export async function refreshStoredCourse(
       input.id,
       code,
       input.sectionCode,
-      key,
+      row.session,
       claimExpiresBefore,
     )
     .first<{ id: string }>();
 
   if (!claim) {
-    row = await readStoredCourse(env.DB, input.id, code, input.sectionCode, key);
+    row = await readStoredCourse(
+      env.DB,
+      input.id,
+      code,
+      input.sectionCode,
+      input.sessions,
+    );
     if (row && isRecent(row.live_refreshed_at, now, LIVE_REFRESH_COOLDOWN_MS)) {
       return {
         status: 200,
@@ -148,6 +158,8 @@ export async function refreshStoredCourse(
     if (!liveCourse) {
       throw new Error("Live course response did not contain an unambiguous offering");
     }
+    const persistedCourse =
+      liveCourse.id === row.id ? liveCourse : { ...liveCourse, id: row.id };
 
     const updatedAt = (options.now?.() ?? new Date()).toISOString();
     const persisted = await env.DB.prepare(
@@ -157,15 +169,15 @@ export async function refreshStoredCourse(
        WHERE id = ? AND session = ? AND live_refresh_claimed_at = ?`,
     )
       .bind(
-        liveCourse.code,
-        liveCourse.sectionCode,
-        liveCourse.name,
-        liveCourse.department.name,
-        JSON.stringify(liveCourse),
+        persistedCourse.code,
+        persistedCourse.sectionCode,
+        persistedCourse.name,
+        persistedCourse.department.name,
+        JSON.stringify(persistedCourse),
         updatedAt,
         updatedAt,
-        input.id,
-        key,
+        row.id,
+        row.session,
         claimedAt,
       )
       .run();
@@ -175,13 +187,13 @@ export async function refreshStoredCourse(
 
     return {
       status: 200,
-      body: { course: liveCourse, updatedAt, cached: false },
+      body: { course: persistedCourse, updatedAt, cached: false },
     };
   } catch (error) {
     await env.DB.prepare(
       "UPDATE courses SET live_refresh_claimed_at = NULL WHERE id = ? AND live_refresh_claimed_at = ?",
     )
-      .bind(input.id, claimedAt)
+      .bind(row.id, claimedAt)
       .run();
     throw error;
   }
@@ -226,17 +238,20 @@ async function readStoredCourse(
   id: string,
   code: string,
   sectionCode: string,
-  key: string,
+  sessions: string[],
 ): Promise<StoredCourseRow | null> {
-  return await db
+  const row = await db
     .prepare(
       `SELECT id, code, section_code, session, data_json, updated_at,
-              live_refreshed_at, live_refresh_claimed_at
+               live_refreshed_at, live_refresh_claimed_at
        FROM courses
-       WHERE id = ? AND code = ? AND section_code = ? AND session = ?`,
+       WHERE id = ? AND code = ? AND section_code = ?`,
     )
-    .bind(id, code, sectionCode, key)
+    .bind(id, code, sectionCode)
     .first<StoredCourseRow>();
+  return row && canonicalSessionKey(row.session.split(",")) === canonicalSessionKey(sessions)
+    ? row
+    : null;
 }
 
 function parseStoredCourse(value: string): Course {
@@ -253,6 +268,14 @@ function isRecent(
   }
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) && now.getTime() - timestamp < thresholdMs;
+}
+
+function normalizeCourseSessions(sessions: readonly string[]): string[] {
+  return [...new Set(sessions.map((session) => session.trim()).filter(Boolean))].sort();
+}
+
+function canonicalSessionKey(sessions: readonly string[]): string {
+  return normalizeCourseSessions(sessions).join(",");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

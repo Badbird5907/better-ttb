@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { csc108Course } from "./__fixtures__/ttb-pageable-csc108";
 import {
+  parseCourseRefreshRequest,
   readCatalogUpdates,
   refreshStoredCourse,
 } from "./catalog-courses";
@@ -79,6 +80,62 @@ describe("durable course refresh", () => {
       status: 202,
       body: { status: "in_progress", retryAfterSeconds: 2 },
     });
+  });
+
+  it("keeps the persisted row id when the upstream offering id changes", async () => {
+    const original = structuredClone(csc108Course) as Course;
+    const live = structuredClone(original) as Course;
+    live.id = "replacement-upstream-id";
+    live.sections[0]!.currentEnrolment = 77;
+    const harness = createCourseDb(original);
+
+    const result = await refreshStoredCourse(
+      { DB: harness.db },
+      original.code,
+      { id: original.id, sectionCode: original.sectionCode, sessions: ["20269"] },
+      {
+        now: () => new Date("2026-07-10T13:00:00.000Z"),
+        getCourses: async () => ({
+          payload: {
+            pageableCourse: {
+              courses: [live],
+              total: 1,
+              page: 1,
+              pageSize: 20,
+              direction: "asc",
+            },
+          },
+          status: [],
+        }),
+      },
+    );
+
+    expect(result?.status).toBe(200);
+    if (result?.status === 200) {
+      expect(result.body.course.id).toBe(original.id);
+    }
+    expect(harness.persistedCourse?.id).toBe(original.id);
+  });
+
+  it("canonicalizes sessions and rejects blank section codes", () => {
+    expect(
+      parseCourseRefreshRequest({
+        id: " course-id ",
+        sectionCode: " F ",
+        sessions: ["20271", "20269", "20271"],
+      }),
+    ).toEqual({
+      id: "course-id",
+      sectionCode: "F",
+      sessions: ["20269", "20271"],
+    });
+    expect(
+      parseCourseRefreshRequest({
+        id: "course-id",
+        sectionCode: "   ",
+        sessions: ["20269"],
+      }),
+    ).toBeNull();
   });
 });
 

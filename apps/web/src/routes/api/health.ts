@@ -4,6 +4,7 @@ import type {} from "@tanstack/react-start";
 
 import { readCatalogSummary } from "@/server/catalog-storage";
 import { bindings } from "@/server/env";
+import { countFailuresSinceLatestSuccess } from "@/server/scrape-health";
 import { createWorkerScraperDeps, getScrapeStatus } from "@/server/scraper";
 
 const CATALOG_STALE_MS = 36 * 60 * 60 * 1000;
@@ -36,9 +37,7 @@ export const Route = createFileRoute("/api/health")({
         const stalled =
           Boolean(active) &&
           (!Number.isFinite(progressMillis) || now - progressMillis > SCRAPE_STALLED_MS);
-        const failedRecently = status.recent.filter(
-          (run) => run.status === "failed" && now - Date.parse(run.started_at) < 86_400_000,
-        ).length;
+        const failedRecently = countFailuresSinceLatestSuccess(status.recent, now);
         const body: CatalogHealthResponse = {
           ok: !stale && !stalled && failedRecently < 2,
           catalog: { scrapedAt, ageSeconds, stale },

@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { readCatalogManifest } from "./catalog-storage";
 import {
+  abandonActiveRun,
   runScheduledScrape,
   runScrapeChunk,
   type ScrapeRunRecord,
@@ -69,6 +70,53 @@ describe("D1-backed catalog scraper", () => {
     expect(result).toBeNull();
   });
 
+  it("starts the next scheduled run at the exact 24-hour boundary", async () => {
+    const db = new MemoryD1();
+    const kv = new MemoryKv();
+    db.seedRun({
+      status: "complete",
+      sessions: "20269",
+      started_at: "2026-07-10T12:00:00.000Z",
+      finished_at: "2026-07-10T18:00:00.000Z",
+    });
+    const result = await runScheduledScrape(
+      { sessions: ["20269"], maxPages: 1 },
+      makeDeps(
+        db,
+        kv,
+        createPageFetch([makePage([makeCourse(1)], 1, 1)]),
+        "2026-07-11T12:00:00.000Z",
+      ),
+    );
+    expect(result?.status).toBe("complete");
+  });
+
+  it("blocks automatic replacement after two recent failed runs", async () => {
+    const db = new MemoryD1();
+    db.seedRun({
+      status: "failed",
+      sessions: "20269",
+      started_at: "2026-07-10T13:00:00.000Z",
+    });
+    db.seedRun({
+      status: "failed",
+      sessions: "20269",
+      started_at: "2026-07-11T11:00:00.000Z",
+    });
+    const result = await runScheduledScrape(
+      { sessions: ["20269"] },
+      makeDeps(
+        db,
+        new MemoryKv(),
+        async () => {
+          throw new Error("Blocked scrape should not fetch");
+        },
+        "2026-07-11T12:00:00.000Z",
+      ),
+    );
+    expect(result?.status).toBe("blocked");
+  });
+
   it("returns busy when another invocation holds the run lease", async () => {
     const db = new MemoryD1();
     const kv = new MemoryKv();
@@ -82,6 +130,109 @@ describe("D1-backed catalog scraper", () => {
       makeDeps(db, kv, createPageFetch([])),
     );
     expect(result.status).toBe("busy");
+  });
+
+  it("recovers when concurrent invocations race to create the active run", async () => {
+    const db = new MemoryD1();
+    const kv = new MemoryKv();
+    let activeReads = 0;
+    let releaseReads!: () => void;
+    const readsReady = new Promise<void>((resolve) => {
+      releaseReads = resolve;
+    });
+    db.beforeActiveRunRead = async () => {
+      activeReads += 1;
+      if (activeReads === 2) {
+        releaseReads();
+      }
+      if (activeReads <= 2) {
+        await readsReady;
+      }
+    };
+
+    let releaseFetch!: (response: Response) => void;
+    const fetchImpl: typeof fetch = async () =>
+      await new Promise<Response>((resolve) => {
+        releaseFetch = resolve;
+      });
+    const first = runScrapeChunk(
+      { sessions: ["20269"], maxPages: 1 },
+      makeDeps(db, kv, fetchImpl),
+    );
+    const second = runScrapeChunk(
+      { sessions: ["20269"], maxPages: 1 },
+      makeDeps(db, kv, fetchImpl),
+    );
+
+    const busy = await Promise.race([first, second]);
+    expect(busy.status).toBe("busy");
+    releaseFetch(createPageResponse(makePage([makeCourse(1)], 1, 1)));
+    const results = await Promise.all([first, second]);
+    expect(results.map((result) => result.status).sort()).toEqual([
+      "busy",
+      "complete",
+    ]);
+    expect([...db.runs.values()].filter((run) => run.status === "complete")).toHaveLength(
+      1,
+    );
+  });
+
+  it("refuses a reset while a live lease is held unless it is forced", async () => {
+    const db = new MemoryD1();
+    const run = db.seedRun({
+      status: "running",
+      sessions: "20269",
+      lease_expires_at: "2026-07-10T13:00:00.000Z",
+    });
+
+    expect(
+      await abandonActiveRun(
+        db,
+        ["20269"],
+        new Date("2026-07-10T12:00:00.000Z"),
+      ),
+    ).toBe("leased");
+    expect(run.status).toBe("running");
+    expect(
+      await abandonActiveRun(
+        db,
+        ["20269"],
+        new Date("2026-07-10T12:00:00.000Z"),
+        true,
+      ),
+    ).toBe("abandoned");
+    expect(run.status).toBe("abandoned");
+  });
+
+  it("does not commit a page after its scrape ownership is revoked", async () => {
+    const db = new MemoryD1();
+    const fetchImpl: typeof fetch = async () => {
+      const run = db.runs.get(1)!;
+      run.status = "abandoned";
+      run.lease_expires_at = null;
+      return createPageResponse(makePage([makeCourse(1)], 1, 1));
+    };
+
+    const result = await runScrapeChunk(
+      { sessions: ["20269"], maxPages: 1 },
+      makeDeps(db, new MemoryKv(), fetchImpl),
+    );
+    expect(result.status).toBe("busy");
+    expect(db.courses.size).toBe(0);
+  });
+
+  it("passes a timeout signal to every upstream page request", async () => {
+    let signal: AbortSignal | null = null;
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      signal = init?.signal as AbortSignal;
+      return createPageResponse(makePage([makeCourse(1)], 1, 1));
+    };
+    const result = await runScrapeChunk(
+      { sessions: ["20269"], maxPages: 1 },
+      makeDeps(new MemoryD1(), new MemoryKv(), fetchImpl),
+    );
+    expect(result.status).toBe("complete");
+    expect(signal).toBeInstanceOf(AbortSignal);
   });
 
   it("keeps page upserts idempotent by course id", async () => {
@@ -161,24 +312,29 @@ function createPageFetch(
   pages: TtbPageableCourse[],
   indicators: DivisionalEnrolmentIndicators[] = [],
 ): typeof fetch {
-  let index = 0;
-  return async () => {
-    const page = pages[index];
+  return async (_input, init) => {
+    const requestedPage = JSON.parse(String(init?.body)) as { page: number };
+    const page = pages.find((candidate) => candidate.page === requestedPage.page);
     if (!page) {
-      throw new Error(`Unexpected fetch ${index + 1}`);
+      throw new Error(`Unexpected fetch for page ${requestedPage.page}`);
     }
+    const indicator = indicators[requestedPage.page - 1];
     const response: TtbPageableCoursesResponse = {
       payload: {
         pageableCourse: page,
-        ...(indicators[index]
-          ? { divisionalEnrolmentIndicators: indicators[index] }
-          : {}),
+        ...(indicator ? { divisionalEnrolmentIndicators: indicator } : {}),
       },
       status: [],
     };
-    index += 1;
     return Response.json(response);
   };
+}
+
+function createPageResponse(page: TtbPageableCourse): Response {
+  return Response.json({
+    payload: { pageableCourse: page },
+    status: [],
+  } satisfies TtbPageableCoursesResponse);
 }
 
 class MemoryKv implements ScraperKeyValue {
@@ -223,6 +379,7 @@ interface StoredCourseRow {
 class MemoryD1 implements ScraperDatabase {
   readonly courses = new Map<string, StoredCourseRow>();
   readonly runs = new Map<number, ScrapeRunRecord>();
+  beforeActiveRunRead?: () => Promise<void>;
   private nextRunId = 1;
 
   prepare(query: string): ScraperStatement {
@@ -230,7 +387,11 @@ class MemoryD1 implements ScraperDatabase {
   }
 
   async batch<T = unknown>(statements: ScraperStatement[]): Promise<D1Result<T>[]> {
-    return await Promise.all(statements.map((statement) => statement.run<T>()));
+    const results: D1Result<T>[] = [];
+    for (const statement of statements) {
+      results.push(await statement.run<T>());
+    }
+    return results;
   }
 
   seedRun(partial: Partial<ScrapeRunRecord>): ScrapeRunRecord {
@@ -272,6 +433,7 @@ class MemoryStatement implements ScraperStatement {
   async first<T = Record<string, unknown>>(): Promise<T | null> {
     const query = this.normalized;
     if (query.startsWith("SELECT * FROM scrape_runs WHERE sessions = ? AND status = 'running'")) {
+      await this.db.beforeActiveRunRead?.();
       return (this.findRuns(String(this.values[0]), "running")[0] ?? null) as T | null;
     }
     if (query.startsWith("SELECT * FROM scrape_runs WHERE sessions = ? AND status = 'complete'")) {
@@ -286,16 +448,24 @@ class MemoryStatement implements ScraperStatement {
       return { count } as T;
     }
     if (query.startsWith("INSERT INTO scrape_runs")) {
+      const sessions = String(this.values[1]);
+      if (this.findRuns(sessions, "running").length > 0) {
+        throw new Error("UNIQUE constraint failed: scrape_runs.sessions");
+      }
       return this.db.seedRun({
         started_at: String(this.values[0]),
-        sessions: String(this.values[1]),
+        sessions,
         trigger_source: String(this.values[2]),
       }) as T;
     }
     if (query.startsWith("UPDATE scrape_runs SET lease_expires_at = ?, last_attempt_at = ?")) {
       const run = this.db.runs.get(Number(this.values[2]));
-      const now = String(this.values[3]);
-      if (!run || run.status !== "running" || (run.lease_expires_at && run.lease_expires_at > now)) {
+      const comparison = String(this.values[3]);
+      const renewing = query.includes("AND lease_expires_at = ?");
+      const unavailable = renewing
+        ? run?.lease_expires_at !== comparison
+        : Boolean(run?.lease_expires_at && run.lease_expires_at > comparison);
+      if (!run || run.status !== "running" || unavailable) {
         return null;
       }
       run.lease_expires_at = String(this.values[0]);
@@ -303,13 +473,44 @@ class MemoryStatement implements ScraperStatement {
       return run as T;
     }
     if (query.startsWith("UPDATE scrape_runs SET failure_count = failure_count + 1")) {
-      const run = this.db.runs.get(Number(this.values[2]));
-      if (!run) return null;
+      const run = this.db.runs.get(Number(this.values[5]));
+      if (
+        !run ||
+        run.status !== "running" ||
+        run.lease_expires_at !== String(this.values[6])
+      ) {
+        return null;
+      }
       run.failure_count += 1;
       run.last_error = String(this.values[0]);
       run.last_attempt_at = String(this.values[1]);
       run.lease_expires_at = null;
-      return { failure_count: run.failure_count } as T;
+      if (run.failure_count >= Number(this.values[2])) {
+        run.status = "failed";
+        run.finished_at = String(this.values[4]);
+      }
+      return { failure_count: run.failure_count, status: run.status } as T;
+    }
+    if (query.startsWith("UPDATE scrape_runs SET status = 'abandoned'")) {
+      const sessions = String(this.values[1]);
+      const force = Number(this.values[2]) === 1;
+      const now = String(this.values[3]);
+      const run = this.findRuns(sessions, "running")[0];
+      if (!run || (!force && run.lease_expires_at && run.lease_expires_at > now)) {
+        return null;
+      }
+      run.status = "abandoned";
+      run.finished_at = String(this.values[0]);
+      run.lease_expires_at = null;
+      return { id: run.id } as T;
+    }
+    if (query.startsWith("SELECT id FROM scrape_runs")) {
+      const run = this.db.runs.get(Number(this.values[0]));
+      return (run &&
+      run.status === "running" &&
+      run.lease_expires_at === String(this.values[1])
+        ? { id: run.id }
+        : null) as T | null;
     }
     throw new Error(`Unsupported first query: ${query}`);
   }
@@ -317,6 +518,14 @@ class MemoryStatement implements ScraperStatement {
   async run<T = Record<string, unknown>>(): Promise<D1Result<T>> {
     const query = this.normalized;
     if (query.startsWith("INSERT INTO courses")) {
+      const run = this.db.runs.get(Number(this.values[9]));
+      if (
+        !run ||
+        run.status !== "running" ||
+        run.lease_expires_at !== String(this.values[10])
+      ) {
+        return d1Result<T>([], 0);
+      }
       const row: StoredCourseRow = {
         id: String(this.values[0]),
         code: String(this.values[1]),
@@ -329,10 +538,16 @@ class MemoryStatement implements ScraperStatement {
         scrape_run_id: Number(this.values[8]),
       };
       this.db.courses.set(row.id, row);
-      return d1Result<T>();
+      return d1Result<T>([], 1);
     }
     if (query.startsWith("UPDATE scrape_runs SET pages_done = ?")) {
       const run = this.requireRun(Number(this.values[5]));
+      if (
+        run.status !== "running" ||
+        run.lease_expires_at !== String(this.values[6])
+      ) {
+        return d1Result<T>([], 0);
+      }
       run.pages_done = Number(this.values[0]);
       run.total_pages = Number(this.values[1]);
       run.total_courses = Number(this.values[2]);
@@ -340,36 +555,33 @@ class MemoryStatement implements ScraperStatement {
       run.failure_count = 0;
       run.last_error = null;
       run.indicators_json = this.values[4] === null ? null : String(this.values[4]);
-      return d1Result<T>();
+      return d1Result<T>([], 1);
     }
     if (query.startsWith("UPDATE scrape_runs SET finished_at = ?, pages_done = ?")) {
       const run = this.requireRun(Number(this.values[3]));
+      if (
+        run.status !== "running" ||
+        run.lease_expires_at !== String(this.values[4])
+      ) {
+        return d1Result<T>([], 0);
+      }
       run.finished_at = String(this.values[0]);
       run.pages_done = Number(this.values[1]);
       run.total_pages = Number(this.values[2]);
       run.status = "complete";
       run.lease_expires_at = null;
-      return d1Result<T>();
+      return d1Result<T>([], 1);
     }
     if (query.startsWith("UPDATE scrape_runs SET lease_expires_at = NULL WHERE id = ?")) {
-      this.requireRun(Number(this.values[0])).lease_expires_at = null;
-      return d1Result<T>();
-    }
-    if (query.startsWith("UPDATE scrape_runs SET status = 'failed'")) {
-      const run = this.requireRun(Number(this.values[1]));
-      run.status = "failed";
-      run.finished_at = String(this.values[0]);
-      return d1Result<T>();
-    }
-    if (query.startsWith("UPDATE scrape_runs SET status = 'abandoned'")) {
-      const sessions = String(this.values[1]);
-      for (const run of this.db.runs.values()) {
-        if (run.sessions === sessions && run.status === "running") {
-          run.status = "abandoned";
-          run.finished_at = String(this.values[0]);
-        }
+      const run = this.requireRun(Number(this.values[0]));
+      if (
+        run.status !== "running" ||
+        run.lease_expires_at !== String(this.values[1])
+      ) {
+        return d1Result<T>([], 0);
       }
-      return d1Result<T>();
+      run.lease_expires_at = null;
+      return d1Result<T>([], 1);
     }
     throw new Error(`Unsupported run query: ${query}`);
   }
@@ -408,7 +620,7 @@ class MemoryStatement implements ScraperStatement {
   }
 }
 
-function d1Result<T = unknown>(results: T[] = []): D1Result<T> {
+function d1Result<T = unknown>(results: T[] = [], changes = 0): D1Result<T> {
   return {
     success: true,
     meta: {
@@ -418,7 +630,7 @@ function d1Result<T = unknown>(results: T[] = []): D1Result<T> {
       rows_written: 0,
       last_row_id: 0,
       changed_db: false,
-      changes: 0,
+      changes,
     },
     results,
   };

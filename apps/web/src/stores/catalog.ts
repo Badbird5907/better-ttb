@@ -78,29 +78,41 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       throw new Error("Cannot refresh a course before its catalog is loaded");
     }
 
+    const requestedSessionsKey =
+      current.sessionsKey ?? normalizeSessions(catalog.sessions).join(",");
     const refreshed = await requestCourseRefresh(course, catalog.sessions);
-    const courses = mergeCourses(catalog.courses, [refreshed.course]);
-    const deltaCursor = laterCursor(current.deltaCursor, {
-      updatedAt: refreshed.updatedAt,
-      id: refreshed.course.id,
-    });
-    const nextCatalog = { ...catalog, courses };
+    const latest = get();
+
+    // A navigation may have loaded a different session catalog while the
+    // refresh request was waiting on another course's claim. The D1 write is
+    // still durable, but it must not be merged into an unrelated catalog.
+    if (
+      latest.sessionsKey !== null &&
+      latest.sessionsKey !== requestedSessionsKey
+    ) {
+      return refreshed.course;
+    }
+
+    const latestCatalog = latest.catalog ?? catalog;
+    const courses = mergeCourses(latestCatalog.courses, [refreshed.course]);
+    const nextCatalog = { ...latestCatalog, courses };
+    const sessionsKey = latest.sessionsKey ?? requestedSessionsKey;
 
     setCatalogReady(
       set,
       nextCatalog,
-      current.etag,
-      current.sessionsKey ?? normalizeSessions(course.sessions).join(","),
-      null,
-      deltaCursor,
+      latest.etag,
+      sessionsKey,
+      latest.error,
+      latest.deltaCursor,
     );
     try {
       await putCatalogCache<CatalogArtifact>({
-        key: current.sessionsKey ?? catalog.sessions.join(","),
-        etag: current.etag,
+        key: sessionsKey,
+        etag: latest.etag,
         body: nextCatalog,
         updatedAt: new Date().toISOString(),
-        ...(deltaCursor ? { deltaCursor } : {}),
+        ...(latest.deltaCursor ? { deltaCursor: latest.deltaCursor } : {}),
       });
     } catch {
       // The D1 update is already durable; a later delta fetch repairs this cache.
@@ -355,12 +367,11 @@ async function requestCourseRefresh(
       const pending = (await response.json()) as CourseRefreshPendingResponse;
       const retryAfter = response.headers.get("Retry-After");
       const seconds = retryAfter === null ? Number.NaN : Number(retryAfter);
-      await delay(
-        1_000 *
-          (Number.isFinite(seconds)
-            ? seconds
-            : pending.retryAfterSeconds || 2),
-      );
+      const requested =
+        Number.isFinite(seconds) && seconds > 0
+          ? seconds
+          : pending.retryAfterSeconds || 2;
+      await delay(1_000 * Math.min(Math.max(requested, 1), 10));
       continue;
     }
     if (!response.ok) {
@@ -368,6 +379,8 @@ async function requestCourseRefresh(
     }
     return parseCourseRefreshResponse(await response.json());
   }
+  // The loop returns or throws on every iteration; retained for TypeScript's
+  // control-flow analysis.
   throw new Error("Course refresh is still in progress");
 }
 
@@ -424,20 +437,6 @@ function mergeCourses(base: readonly Course[], updates: readonly Course[]): Cour
     }
   }
   return merged;
-}
-
-function laterCursor(
-  current: CatalogDeltaCursor | null,
-  candidate: CatalogDeltaCursor,
-): CatalogDeltaCursor {
-  if (!current) {
-    return candidate;
-  }
-  const comparison = candidate.updatedAt.localeCompare(current.updatedAt);
-  if (comparison > 0 || (comparison === 0 && candidate.id > current.id)) {
-    return candidate;
-  }
-  return current;
 }
 
 function delay(ms: number): Promise<void> {

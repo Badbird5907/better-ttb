@@ -71,6 +71,7 @@ describe("catalog store", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
@@ -217,5 +218,89 @@ describe("catalog store", () => {
     }) as typeof fetch;
     await useCatalogStore.getState().loadCatalog(["20271"]);
     expect(useCatalogStore.getState().catalog?.courses[0]?.sections).toHaveLength(2);
+  });
+
+  it("merges a refresh into the latest store without skipping unseen deltas", async () => {
+    const base = structuredClone(csc108Course) as Course;
+    globalThis.fetch = mockCatalogFetch(makeArtifact());
+    await useCatalogStore.getState().loadCatalog(["20269"]);
+
+    const refreshed = structuredClone(base) as Course;
+    refreshed.sections[0]!.currentEnrolment = 88;
+    let resolveRefresh!: (response: Response) => void;
+    globalThis.fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    ) as typeof fetch;
+
+    const refresh = useCatalogStore.getState().refreshCourse(base);
+    const concurrent = structuredClone(base) as Course;
+    concurrent.id = "mat224-id";
+    concurrent.code = "MAT224H1";
+    const previousCursor = {
+      updatedAt: "2026-07-10T12:30:00.000Z",
+      id: concurrent.id,
+    };
+    useCatalogStore.setState((state) => ({
+      catalog: state.catalog
+        ? { ...state.catalog, courses: [base, concurrent] }
+        : null,
+      error: "concurrent delta warning",
+      deltaCursor: previousCursor,
+    }));
+
+    resolveRefresh(
+      Response.json({
+        course: refreshed,
+        updatedAt: "2026-07-10T13:00:00.000Z",
+        cached: false,
+      }),
+    );
+    await refresh;
+
+    const state = useCatalogStore.getState();
+    expect(state.catalog?.courses.map((course) => course.code)).toEqual([
+      "CSC108H1",
+      "MAT224H1",
+    ]);
+    expect(state.catalog?.courses[0]?.sections[0]?.currentEnrolment).toBe(88);
+    expect(state.deltaCursor).toEqual(previousCursor);
+    expect(state.error).toBe("concurrent delta warning");
+    expect(
+      (catalogCache.get("20269") as { deltaCursor?: unknown }).deltaCursor,
+    ).toEqual(previousCursor);
+  });
+
+  it("caps Retry-After delays before retrying a claimed refresh", async () => {
+    globalThis.fetch = mockCatalogFetch(makeArtifact());
+    await useCatalogStore.getState().loadCatalog(["20269"]);
+    vi.useFakeTimers();
+
+    const refreshed = structuredClone(csc108Course) as Course;
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          { status: "in_progress", retryAfterSeconds: 2 },
+          { status: 202, headers: { "Retry-After": "600" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          course: refreshed,
+          updatedAt: "2026-07-10T13:00:00.000Z",
+          cached: false,
+        }),
+      );
+    globalThis.fetch = fetchMock;
+
+    const refresh = useCatalogStore.getState().refreshCourse(refreshed);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await refresh;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

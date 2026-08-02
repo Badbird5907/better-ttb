@@ -17,6 +17,12 @@ export const env = {
   ADMIN_TOKEN: "dev-admin-token",
 };
 
+export function waitUntil(promise: Promise<unknown>): void {
+  void promise.catch((error: unknown) => {
+    console.warn("Local Worker background task failed", error);
+  });
+}
+
 function createMemoryKv(): KVNamespace {
   return {
     async get(

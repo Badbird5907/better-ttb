@@ -28,6 +28,7 @@ const MAX_PAGES_PER_INVOCATION = 25;
 const MAX_UPSTREAM_REQUESTS = 45;
 const REQUEST_DELAY_MS = 150;
 const RETRY_DELAYS_MS = [250, 1_000];
+const UPSTREAM_TIMEOUT_MS = 20_000;
 const CATALOG_DIVISION = "ARTSC";
 const SCHEDULED_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LEASE_MS = 2 * 60 * 1000;
@@ -174,6 +175,16 @@ export async function runScrapeChunk(
           sleep,
           requestBudget,
         );
+      const renewedLease = await renewLease(
+        deps.db,
+        run.id,
+        requireLease(run),
+        now(),
+      );
+      if (!renewedLease) {
+        return resultForRun("busy", run, sessions);
+      }
+      run = renewedLease;
       const updatedAt = now().toISOString();
       const indicators = mergeIndicators(
         parseIndicators(run.indicators_json),
@@ -183,7 +194,7 @@ export async function runScrapeChunk(
       const total = pageableCourse.total;
       const totalPages = Math.ceil(total / TTB_PAGE_SIZE);
 
-      await commitPage(
+      const committed = await commitPage(
         deps.db,
         pageableCourse.courses,
         key,
@@ -193,7 +204,11 @@ export async function runScrapeChunk(
         total,
         totalPages,
         indicators,
+        requireLease(run),
       );
+      if (!committed) {
+        return resultForRun("busy", run, sessions);
+      }
       run = {
         ...run,
         pages_done: pagesDone,
@@ -207,8 +222,25 @@ export async function runScrapeChunk(
       pagesDoneThisInvocation += 1;
 
       if (isLastPage(page, total, pageableCourse.courses.length)) {
+        const completionLease = await renewLease(
+          deps.db,
+          run.id,
+          requireLease(run),
+          now(),
+        );
+        if (!completionLease) {
+          return resultForRun("busy", run, sessions);
+        }
+        run = completionLease;
         const snapshotCutoff = now().toISOString();
-        await completeRun(deps, run, sessions, snapshotCutoff, now().toISOString());
+        await completeRun(
+          deps,
+          run,
+          sessions,
+          snapshotCutoff,
+          now().toISOString(),
+          requireLease(run),
+        );
         return {
           status: "complete",
           pagesDone: pagesDoneThisInvocation,
@@ -222,7 +254,7 @@ export async function runScrapeChunk(
       }
     }
 
-    await releaseLease(deps.db, run.id);
+    await releaseLease(deps.db, run.id, requireLease(run));
     console.info("Catalog scrape chunk completed", {
       runId: run.id,
       pagesDone: pagesDoneThisInvocation,
@@ -242,7 +274,16 @@ export async function runScrapeChunk(
       cursor: cursorForRun(run, sessions),
     };
   } catch (error) {
-    await recordFailure(deps.db, run.id, error, now().toISOString());
+    if (error instanceof ScrapeLeaseLostError) {
+      return resultForRun("busy", run, sessions);
+    }
+    await recordFailure(
+      deps.db,
+      run.id,
+      requireLease(run),
+      error,
+      now().toISOString(),
+    );
     throw error;
   }
 }
@@ -286,18 +327,27 @@ export async function abandonActiveRun(
   db: ScraperDatabase,
   sessions: string[],
   now = new Date(),
-): Promise<void> {
-  await db
+  force = false,
+): Promise<"abandoned" | "leased" | "none"> {
+  const key = sessionKey(sessions);
+  const abandoned = await db
     .prepare(
       `UPDATE scrape_runs
        SET status = 'abandoned', finished_at = ?, lease_expires_at = NULL
-       WHERE sessions = ? AND status = 'running'`,
+       WHERE sessions = ? AND status = 'running'
+         AND (? = 1 OR lease_expires_at IS NULL OR lease_expires_at <= ?)
+       RETURNING id`,
     )
-    .bind(now.toISOString(), sessionKey(sessions))
-    .run();
+    .bind(now.toISOString(), key, force ? 1 : 0, now.toISOString())
+    .first<{ id: number }>();
+  if (!abandoned) {
+    return (await readActiveRun(db, key)) ? "leased" : "none";
+  }
   captureServerEvent("catalog_scrape_abandoned", {
-    sessions: sessionKey(sessions),
+    sessions: key,
+    force,
   });
+  return "abandoned";
 }
 
 export async function getScrapeStatus(
@@ -365,6 +415,25 @@ async function acquireLease(
     .first<ScrapeRunRecord>();
 }
 
+async function renewLease(
+  db: ScraperDatabase,
+  runId: number,
+  currentLeaseExpiresAt: string,
+  now: Date,
+): Promise<ScrapeRunRecord | null> {
+  const nowIso = now.toISOString();
+  const leaseExpiresAt = new Date(now.getTime() + LEASE_MS).toISOString();
+  return await db
+    .prepare(
+      `UPDATE scrape_runs
+       SET lease_expires_at = ?, last_attempt_at = ?
+       WHERE id = ? AND status = 'running' AND lease_expires_at = ?
+       RETURNING *`,
+    )
+    .bind(leaseExpiresAt, nowIso, runId, currentLeaseExpiresAt)
+    .first<ScrapeRunRecord>();
+}
+
 async function commitPage(
   db: ScraperDatabase,
   courses: Course[],
@@ -375,11 +444,17 @@ async function commitPage(
   totalCourses: number,
   totalPages: number,
   indicators: DivisionalEnrolmentIndicators | undefined,
-): Promise<void> {
+  leaseExpiresAt: string,
+): Promise<boolean> {
   const upsert = `
     INSERT INTO courses (
       id, code, section_code, session, name, department, data_json, updated_at, scrape_run_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    )
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM scrape_runs
+      WHERE id = ? AND status = 'running' AND lease_expires_at = ?
+    )
     ON CONFLICT(id) DO UPDATE SET
       code = excluded.code,
       section_code = excluded.section_code,
@@ -403,6 +478,8 @@ async function commitPage(
         JSON.stringify(course),
         updatedAt,
         runId,
+        runId,
+        leaseExpiresAt,
       ),
   );
   statements.push(
@@ -412,7 +489,7 @@ async function commitPage(
          SET pages_done = ?, total_pages = ?, total_courses = ?,
              last_progress_at = ?, failure_count = 0, last_error = NULL,
              indicators_json = ?
-         WHERE id = ? AND status = 'running'`,
+         WHERE id = ? AND status = 'running' AND lease_expires_at = ?`,
       )
       .bind(
         pagesDone,
@@ -421,9 +498,11 @@ async function commitPage(
         updatedAt,
         indicators ? JSON.stringify(indicators) : null,
         runId,
+        leaseExpiresAt,
       ),
   );
-  await db.batch(statements);
+  const results = await db.batch(statements);
+  return (results.at(-1)?.meta.changes ?? 0) > 0;
 }
 
 async function completeRun(
@@ -432,6 +511,7 @@ async function completeRun(
   sessions: string[],
   snapshotCutoff: string,
   publishedAt: string,
+  leaseExpiresAt: string,
 ): Promise<void> {
   const courses = await readCoursesForRun(deps.db, sessions, run.id);
   const total = run.total_courses ?? courses.length;
@@ -443,21 +523,28 @@ async function completeRun(
     courses,
     ...(indicators ? { divisionalEnrolmentIndicators: indicators } : {}),
   };
+  if (!(await ownsLease(deps.db, run.id, leaseExpiresAt))) {
+    throw new ScrapeLeaseLostError();
+  }
   const manifest = await publishCatalog(deps.kv, catalog, run.id, publishedAt);
-  await deps.db
+  const completed = await deps.db
     .prepare(
       `UPDATE scrape_runs
        SET finished_at = ?, pages_done = ?, total_pages = ?, status = 'complete',
            lease_expires_at = NULL, last_error = NULL
-       WHERE id = ?`,
+       WHERE id = ? AND status = 'running' AND lease_expires_at = ?`,
     )
     .bind(
       publishedAt,
       run.pages_done,
       Math.ceil(total / TTB_PAGE_SIZE),
       run.id,
+      leaseExpiresAt,
     )
     .run();
+  if (completed.meta.changes === 0) {
+    throw new ScrapeLeaseLostError();
+  }
   console.info("Catalog scrape completed", {
     runId: run.id,
     total,
@@ -532,16 +619,40 @@ async function automaticRestartsBlocked(
   return (row?.count ?? 0) >= MAX_FAILED_RUNS_PER_DAY;
 }
 
-async function releaseLease(db: ScraperDatabase, runId: number): Promise<void> {
+async function ownsLease(
+  db: ScraperDatabase,
+  runId: number,
+  leaseExpiresAt: string,
+): Promise<boolean> {
+  return Boolean(
+    await db
+      .prepare(
+        `SELECT id FROM scrape_runs
+         WHERE id = ? AND status = 'running' AND lease_expires_at = ?`,
+      )
+      .bind(runId, leaseExpiresAt)
+      .first<{ id: number }>(),
+  );
+}
+
+async function releaseLease(
+  db: ScraperDatabase,
+  runId: number,
+  leaseExpiresAt: string,
+): Promise<void> {
   await db
-    .prepare("UPDATE scrape_runs SET lease_expires_at = NULL WHERE id = ?")
-    .bind(runId)
+    .prepare(
+      `UPDATE scrape_runs SET lease_expires_at = NULL
+       WHERE id = ? AND status = 'running' AND lease_expires_at = ?`,
+    )
+    .bind(runId, leaseExpiresAt)
     .run();
 }
 
 async function recordFailure(
   db: ScraperDatabase,
   runId: number,
+  leaseExpiresAt: string,
   error: unknown,
   failedAt: string,
 ): Promise<void> {
@@ -550,24 +661,36 @@ async function recordFailure(
     .prepare(
       `UPDATE scrape_runs
        SET failure_count = failure_count + 1, last_error = ?,
-           last_attempt_at = ?, lease_expires_at = NULL
-       WHERE id = ?
-       RETURNING failure_count`,
+           last_attempt_at = ?,
+           status = CASE
+             WHEN failure_count + 1 >= ? THEN 'failed'
+             ELSE status
+           END,
+           finished_at = CASE
+             WHEN failure_count + 1 >= ? THEN ?
+             ELSE finished_at
+           END,
+           lease_expires_at = NULL
+       WHERE id = ? AND status = 'running' AND lease_expires_at = ?
+       RETURNING failure_count, status`,
     )
-    .bind(message, failedAt, runId)
-    .first<{ failure_count: number }>();
-  if ((row?.failure_count ?? 0) >= MAX_CONSECUTIVE_FAILURES) {
-    await db
-      .prepare(
-        `UPDATE scrape_runs
-         SET status = 'failed', finished_at = ?, lease_expires_at = NULL
-         WHERE id = ?`,
-      )
-      .bind(failedAt, runId)
-      .run();
-  }
+    .bind(
+      message,
+      failedAt,
+      MAX_CONSECUTIVE_FAILURES,
+      MAX_CONSECUTIVE_FAILURES,
+      failedAt,
+      runId,
+      leaseExpiresAt,
+    )
+    .first<{ failure_count: number; status: string }>();
   console.error("Catalog scrape failed", { runId, message });
-  captureServerEvent("catalog_scrape_failed", { runId, message });
+  captureServerEvent("catalog_scrape_failed", {
+    runId,
+    message,
+    failureCount: row?.failure_count ?? null,
+    status: row?.status ?? null,
+  });
 }
 
 async function fetchPageWithRetry(
@@ -586,7 +709,10 @@ async function fetchPageWithRetry(
     try {
       return await getPageableCourses(
         buildPageableCoursesBody({ sessions, divisions: [CATALOG_DIVISION], page }),
-        fetchImpl ? { fetchImpl } : {},
+        {
+          ...(fetchImpl ? { fetchImpl } : {}),
+          signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+        },
       );
     } catch (error) {
       lastError = error;
@@ -675,6 +801,20 @@ function normalizeMaxPages(maxPages: number | undefined): number {
 
 function sanitizeError(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 500);
+}
+
+function requireLease(run: ScrapeRunRecord): string {
+  if (!run.lease_expires_at) {
+    throw new ScrapeLeaseLostError();
+  }
+  return run.lease_expires_at;
+}
+
+class ScrapeLeaseLostError extends Error {
+  constructor() {
+    super("Scrape lease is no longer owned by this invocation");
+    this.name = "ScrapeLeaseLostError";
+  }
 }
 
 function delay(ms: number): Promise<void> {

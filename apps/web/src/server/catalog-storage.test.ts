@@ -40,6 +40,29 @@ describe("catalog storage", () => {
     expect(matchesIfNoneMatch('W/"other"', 'W/"catalog-7"')).toBe(false);
   });
 
+  it("serves the compressed blob when the client accepts gzip", async () => {
+    const kv = new MemoryKv();
+    const catalog = makeCatalog("2026-07-10T12:00:00.000Z");
+    const manifest = await publishCatalog(
+      kv,
+      catalog,
+      8,
+      "2026-07-10T12:01:00.000Z",
+    );
+    const response = await getCatalogResponse(
+      kv,
+      catalog.sessions,
+      new Request("https://example.test/api/catalog", {
+        headers: { "Accept-Encoding": "br, gzip" },
+      }),
+    );
+
+    expect(response?.headers.get("Content-Encoding")).toBe("gzip");
+    expect((await response?.arrayBuffer())?.byteLength).toBe(
+      manifest.active.compressedBytes,
+    );
+  });
+
   it("falls back to the previous version when the active blob is unavailable", async () => {
     const kv = new MemoryKv();
     const first = makeCatalog("2026-07-10T12:00:00.000Z");

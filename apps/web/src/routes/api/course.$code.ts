@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
 
-import { bindings } from "@/server/env";
+import { bindings, getCourseRefreshRateLimit } from "@/server/env";
 import { captureServerEvent } from "@/server/telemetry";
 import {
   parseCourseRefreshRequest,
@@ -31,9 +31,18 @@ export const Route = createFileRoute("/api/course/$code")({
       },
       POST: async ({ params, request }) => {
         const rateLimitKey = request.headers.get("CF-Connecting-IP") ?? "local";
-        const rateLimit = await bindings.COURSE_REFRESH_RATE_LIMIT.limit({
-          key: rateLimitKey,
-        });
+        let rateLimit: { success: boolean };
+        try {
+          rateLimit = await getCourseRefreshRateLimit().limit({ key: rateLimitKey });
+        } catch (error) {
+          console.error("Course refresh rate limiter unavailable", {
+            message: error instanceof Error ? error.message : String(error),
+          });
+          return Response.json(
+            { error: "rate_limit_unavailable" },
+            { status: 503, headers: { "Retry-After": "60" } },
+          );
+        }
         if (!rateLimit.success) {
           return Response.json(
             { error: "rate_limited" },

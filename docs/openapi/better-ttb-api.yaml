@@ -134,6 +134,20 @@ paths:
                   cached: {type: boolean}
         '202':
           description: Another refresh currently owns the course claim.
+          headers:
+            Retry-After:
+              schema: {type: integer}
+              description: Seconds to wait before retrying.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, retryAfterSeconds]
+                properties:
+                  status: {type: string, enum: [in_progress]}
+                  retryAfterSeconds: {type: integer}
+        '404':
+          $ref: '#/components/responses/NotFound'
         '429':
           description: Anonymous refresh rate limit exceeded.
   /api/catalog/updates:
@@ -163,6 +177,12 @@ paths:
                       updatedAt: {type: string, format: date-time}
                       id: {type: string}
                   hasMore: {type: boolean}
+        '400':
+          description: Missing or invalid sessions or cursor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/reference-data:
     get:
       tags: [Reference Data]
@@ -331,7 +351,7 @@ paths:
       description: |
         Starts or resumes a chunked TTB scrape. Requires `Authorization: Bearer <ADMIN_TOKEN>`.
         The scraper is designed around Cloudflare free-plan limits, keeping each invocation below the
-        50-subrequest ceiling by processing at most about 40 TTB pages and storing a KV cursor for resume.
+        request ceiling by processing at most 25 TTB pages and persisting progress in D1 for resume.
       operationId: adminScrape
       security:
         - AdminBearer: []
@@ -349,14 +369,19 @@ paths:
                 maxPages:
                   type: integer
                   minimum: 1
-                  description: Optional invocation page limit.
+                  maximum: 25
+                  description: Optional invocation page limit, capped at 25.
                 reset:
                   type: boolean
-                  description: Reset any stored cursor before scraping.
+                  description: Abandon the active run before starting a replacement.
+                force:
+                  type: boolean
+                  description: Allow reset even when the active run still holds a live lease.
             example:
               sessions: ["20269", "20271", "20269-20271"]
-              maxPages: 40
+              maxPages: 25
               reset: false
+              force: false
       responses:
         '202':
           description: Scrape status and cursor.
@@ -396,6 +421,14 @@ paths:
                 $ref: '#/components/schemas/Error'
               example:
                 error: unauthorized
+        '409':
+          description: Reset was refused because the active run still holds a live lease.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: scrape_lease_active
   /api/health:
     get:
       summary: Check catalog freshness and scraper progress

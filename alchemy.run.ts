@@ -35,12 +35,13 @@ const courseRefreshRateLimit = RateLimit({
 export const web = await TanStackStart("web", {
   cwd: "apps/web",
   adopt: true,
+  compatibilityDate: "2026-08-01",
   bindings: {
     DB: db,
     KV: kv,
     COURSE_REFRESH_RATE_LIMIT: courseRefreshRateLimit,
     SESSIONS: "20269,20271,20269-20271",
-    ADMIN_TOKEN: alchemy.secret(process.env.ADMIN_TOKEN ?? "dev-admin-token"),
+    ADMIN_TOKEN: alchemy.secret(process.env.ADMIN_TOKEN ?? ""),
   },
   crons: ["0 * * * *"],
   domains: [
