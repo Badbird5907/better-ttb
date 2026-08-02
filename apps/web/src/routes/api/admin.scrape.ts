@@ -1,21 +1,45 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
 
+import { isBearerTokenAuthorized } from "@/server/admin-auth";
 import { bindings } from "@/server/env";
 import {
+  abandonActiveRun,
   createWorkerScraperDeps,
+  getScrapeStatus,
   runScrapeChunk,
   SCRAPE_CURSOR_KEY,
 } from "@/server/scraper";
+import { readCatalogManifest } from "@/server/catalog-storage";
 
 export const Route = createFileRoute("/api/admin/scrape")({
   server: {
     handlers: {
+      GET: async ({ request }) => {
+        if (!(await isBearerTokenAuthorized(request, bindings.ADMIN_TOKEN))) {
+          return Response.json({ error: "unauthorized" }, { status: 401 });
+        }
+        const url = new URL(request.url);
+        const sessions = parseSessions(
+          url.searchParams.get("sessions")?.split(","),
+          bindings.SESSIONS,
+        );
+        if (sessions.length === 0) {
+          return Response.json({ error: "invalid_sessions" }, { status: 400 });
+        }
+        const [status, manifest, legacyCursor] = await Promise.all([
+          getScrapeStatus(createWorkerScraperDeps(bindings).db, sessions),
+          readCatalogManifest(bindings.KV, sessions),
+          bindings.KV.get(SCRAPE_CURSOR_KEY),
+        ]);
+        return Response.json({
+          ...status,
+          manifest,
+          legacyCursorPresent: legacyCursor !== null,
+        });
+      },
       POST: async ({ request }) => {
-        if (
-          request.headers.get("Authorization") !==
-          `Bearer ${bindings.ADMIN_TOKEN}`
-        ) {
+        if (!(await isBearerTokenAuthorized(request, bindings.ADMIN_TOKEN))) {
           return Response.json({ error: "unauthorized" }, { status: 401 });
         }
 
@@ -26,14 +50,31 @@ export const Route = createFileRoute("/api/admin/scrape")({
         }
 
         const sessions = parseSessions(body?.sessions, bindings.SESSIONS);
+        if (sessions.length === 0) {
+          return Response.json({ error: "invalid_sessions" }, { status: 400 });
+        }
         const maxPages = parseMaxPages(body?.maxPages);
 
         if (body?.reset === true) {
+          const reset = await abandonActiveRun(
+            createWorkerScraperDeps(bindings).db,
+            sessions,
+            new Date(),
+            body.force === true,
+          );
+          if (reset === "leased") {
+            return Response.json(
+              { error: "scrape_lease_active" },
+              { status: 409, headers: { "Retry-After": "120" } },
+            );
+          }
           await bindings.KV.delete(SCRAPE_CURSOR_KEY);
         }
 
         const result = await runScrapeChunk(
-          maxPages ? { sessions, maxPages } : { sessions },
+          maxPages
+            ? { sessions, maxPages, triggerSource: "manual" }
+            : { sessions, triggerSource: "manual" },
           createWorkerScraperDeps(bindings),
         );
 
@@ -47,6 +88,7 @@ interface AdminScrapeBody {
   sessions?: string[];
   maxPages?: number;
   reset?: boolean;
+  force?: boolean;
 }
 
 async function readJsonBody(request: Request): Promise<AdminScrapeBody | null | false> {
@@ -80,6 +122,10 @@ async function readJsonBody(request: Request): Promise<AdminScrapeBody | null | 
       body.reset = parsed.reset;
     }
 
+    if (typeof parsed.force === "boolean") {
+      body.force = parsed.force;
+    }
+
     return body;
   } catch {
     return false;
@@ -104,7 +150,7 @@ function parseMaxPages(value: number | undefined): number | undefined {
     return undefined;
   }
 
-  return Math.max(1, Math.floor(value));
+  return Math.min(25, Math.max(1, Math.floor(value)));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

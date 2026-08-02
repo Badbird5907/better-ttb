@@ -1,5 +1,5 @@
 interface StoredKvValue {
-  value: string;
+  value: string | ArrayBuffer;
   expiresAt: number | null;
 }
 
@@ -8,13 +8,27 @@ const kvStore = new Map<string, StoredKvValue>();
 export const env = {
   DB: createUnsupportedD1(),
   KV: createMemoryKv(),
+  COURSE_REFRESH_RATE_LIMIT: {
+    async limit(): Promise<{ success: boolean }> {
+      return { success: true };
+    },
+  },
   SESSIONS: "20269,20271,20269-20271",
   ADMIN_TOKEN: "dev-admin-token",
 };
 
+export function waitUntil(promise: Promise<unknown>): void {
+  void promise.catch((error: unknown) => {
+    console.warn("Local Worker background task failed", error);
+  });
+}
+
 function createMemoryKv(): KVNamespace {
   return {
-    async get(key: string): Promise<string | null> {
+    async get(
+      key: string,
+      type?: "text" | "arrayBuffer",
+    ): Promise<string | ArrayBuffer | null> {
       const entry = kvStore.get(key);
 
       if (!entry) {
@@ -26,11 +40,18 @@ function createMemoryKv(): KVNamespace {
         return null;
       }
 
-      return entry.value;
+      if (type === "arrayBuffer") {
+        return typeof entry.value === "string"
+          ? new TextEncoder().encode(entry.value).buffer
+          : entry.value;
+      }
+      return typeof entry.value === "string"
+        ? entry.value
+        : new TextDecoder().decode(entry.value);
     },
     async put(
       key: string,
-      value: string,
+      value: string | ArrayBuffer,
       options?: { expirationTtl?: number },
     ): Promise<void> {
       kvStore.set(key, {

@@ -14,6 +14,7 @@ export const TTB_PAGE_SIZE = 20;
 export interface TtbClientOptions {
   fetchImpl?: typeof fetch;
   baseUrl?: string;
+  signal?: AbortSignal;
 }
 
 export interface BuildPageableCoursesBodyOptions {
@@ -150,7 +151,10 @@ async function requestJson<T>(
   options: TtbClientOptions,
 ): Promise<T | null> {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const response = await fetchImpl(url, init);
+  const response = await fetchImpl(url, {
+    ...init,
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
   const responseBody = await readJson(response);
 
   if (isNoResults(response.status, responseBody)) {

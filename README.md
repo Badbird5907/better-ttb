@@ -66,22 +66,36 @@ Note: deploy must go through the `alchemy` CLI (the pnpm script does), not plain
 `tsx alchemy.run.ts` — the CLI generates `.alchemy/local/wrangler.jsonc`, which
 the Alchemy Vite plugin requires during the build.
 After the first deploy the catalog is empty — populate it by calling the admin
-scrape endpoint (the configured hourly cron also resumes active scrapes and
-starts a new scrape when the published catalog is at least 24 hours old):
+scrape endpoint. The configured hourly cron resumes a leased D1 scrape run and
+starts a new complete run every 24 hours, measured from the prior run's start:
 
 ```sh
 curl -X POST https://<your-worker>/api/admin/scrape \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
-The endpoint processes at most 40 pages per call. If the response has
+The endpoint processes at most 25 pages per call. If the response has
 `"status":"running"`, repeat the request until it returns `"status":"complete"`.
+Use `{"reset":true}` once after migrating from the legacy KV cursor. Inspect
+the active run, recent failures, and compressed catalog manifest with:
+
+```sh
+curl https://<your-worker>/api/admin/scrape \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+`GET /api/health` returns HTTP 503 when the catalog is older than 36 hours or
+an active scrape has not progressed for two hours.
 
 ## Architecture
 
 Turborepo workspace: a TanStack Start (React 19 + Tailwind v4 + shadcn/ui) app
 in `apps/web` with server routes on Cloudflare Workers (D1 + KV), sharing
 `@better-ttb/shared` types and the `@better-ttb/generator` scheduling engine.
+Complete catalogs are stored as versioned gzip blobs in KV. Per-course live
+refreshes and completed scrape pages are stored in D1 and delivered as catalog
+deltas, so updated rooms, meeting times, instructors, requisites, and enrolment
+data survive reload before the next complete catalog publication.
 
 ### Walking distances and routes
 
