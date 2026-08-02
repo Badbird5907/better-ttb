@@ -390,12 +390,9 @@ async function requestCourseRefresh(
         throw new Error("Course refresh is still in progress");
       }
       const pending = (await response.json()) as CourseRefreshPendingResponse;
-      const retryAfter = response.headers.get("Retry-After");
-      const seconds = retryAfter === null ? Number.NaN : Number(retryAfter);
       const requested =
-        Number.isFinite(seconds) && seconds > 0
-          ? seconds
-          : pending.retryAfterSeconds || 2;
+        parseRetryAfterSeconds(response.headers.get("Retry-After")) ??
+        (pending.retryAfterSeconds || 2);
       await delay(1_000 * Math.min(Math.max(requested, 1), 10));
       continue;
     }

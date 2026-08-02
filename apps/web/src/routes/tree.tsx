@@ -115,7 +115,10 @@ function TreeRoute() {
   const [refreshingCourseKey, setRefreshingCourseKey] = React.useState<
     string | null
   >(null);
-  const [refreshError, setRefreshError] = React.useState<string | null>(null);
+  const [refreshError, setRefreshError] = React.useState<{
+    courseKey: string;
+    message: string;
+  } | null>(null);
   const [sheetCourseKey, setSheetCourseKey] = React.useState<string | null>(
     null,
   );
@@ -149,13 +152,15 @@ function TreeRoute() {
       try {
         await refreshCatalogCourse(course);
       } catch (refreshErrorValue) {
-        setRefreshError(
-          refreshErrorValue instanceof Error
-            ? refreshErrorValue.message
-            : String(refreshErrorValue),
-        );
+        setRefreshError({
+          courseKey: key,
+          message:
+            refreshErrorValue instanceof Error
+              ? refreshErrorValue.message
+              : String(refreshErrorValue),
+        });
       } finally {
-        setRefreshingCourseKey(null);
+        setRefreshingCourseKey((current) => (current === key ? null : current));
       }
     },
     [refreshCatalogCourse],
@@ -277,7 +282,11 @@ function TreeRoute() {
         course={sheetCourse}
         activePlan={activePlan}
         planSelectedSections={planSelectedSections}
-        refreshError={refreshError}
+        refreshError={
+          sheetCourseKey === refreshError?.courseKey
+            ? refreshError.message
+            : null
+        }
         refreshing={sheetCourseKey === refreshingCourseKey}
         pinned={
           sheetCourse

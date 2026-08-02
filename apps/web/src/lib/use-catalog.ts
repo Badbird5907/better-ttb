@@ -11,6 +11,7 @@ const REVALIDATE_AFTER_MS = 15 * 60 * 1000;
 export const COURSE_AUTO_REFRESH_AFTER_MS = 30 * 60 * 1000;
 const COURSE_AUTO_REFRESH_TICK_MS = 60 * 1000;
 const COURSE_AUTO_REFRESH_RETRY_MS = 5 * 60 * 1000;
+export const COURSE_AUTO_REFRESH_CLAIM_MS = 2 * 60 * 1000;
 const COURSE_AUTO_REFRESH_CONCURRENCY = 4;
 
 export interface AutoRefreshTiming {
@@ -69,17 +70,19 @@ function useAutoRefreshPinnedCourses(plan: Plan): void {
     .map((pinned) => offeringKey(pinned.courseCode, pinned.sectionCode))
     .sort()
     .join("|");
+  const planRef = React.useRef(plan);
+  planRef.current = plan;
 
   React.useEffect(() => {
     if (status === "ready" && sessionsKey === planSessionsKey) {
-      void refreshDuePinnedCourses(plan);
+      void refreshDuePinnedCourses(planRef.current);
     }
-  }, [pinnedSignature, plan, planSessionsKey, sessionsKey, status]);
+  }, [pinnedSignature, planSessionsKey, sessionsKey, status]);
 
   React.useEffect(() => {
     const refreshWhenDue = () => {
       if (document.visibilityState === "visible") {
-        void refreshDuePinnedCourses(plan);
+        void refreshDuePinnedCourses(planRef.current);
       }
     };
     const interval = window.setInterval(
@@ -91,7 +94,7 @@ function useAutoRefreshPinnedCourses(plan: Plan): void {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", refreshWhenDue);
     };
-  }, [pinnedSignature, plan, planSessionsKey]);
+  }, [pinnedSignature, planSessionsKey]);
 }
 
 async function refreshDuePinnedCourses(plan: Plan): Promise<void> {
@@ -128,19 +131,49 @@ async function refreshDuePinnedCourses(plan: Plan): Promise<void> {
           nextAttemptAt: 0,
         });
       } catch (error) {
-        const retryAfterMs =
-          error instanceof CourseRefreshRequestError &&
-          error.retryAfterSeconds !== null
-            ? error.retryAfterSeconds * 1000
-            : COURSE_AUTO_REFRESH_RETRY_MS;
         const previous = autoRefreshTimings.get(key);
-        autoRefreshTimings.set(key, {
-          refreshedAt: previous?.refreshedAt ?? null,
-          nextAttemptAt: Date.now() + retryAfterMs,
-        });
+        autoRefreshTimings.set(
+          key,
+          nextCourseAutoRefreshTiming(previous, error, Date.now()),
+        );
       }
     },
   );
+}
+
+export function claimCourseAutoRefresh(
+  sessionsKey: string,
+  courseId: string,
+  now: number,
+  timings: Map<string, AutoRefreshTiming> = autoRefreshTimings,
+): boolean {
+  const key = autoRefreshKey(sessionsKey, courseId);
+  if (!isCourseAutoRefreshDue(key, now, timings)) {
+    return false;
+  }
+
+  const previous = timings.get(key);
+  timings.set(key, {
+    refreshedAt: previous?.refreshedAt ?? null,
+    nextAttemptAt: now + COURSE_AUTO_REFRESH_CLAIM_MS,
+  });
+  return true;
+}
+
+export function nextCourseAutoRefreshTiming(
+  previous: AutoRefreshTiming | undefined,
+  error: unknown,
+  now: number,
+): AutoRefreshTiming {
+  const retryAfterMs =
+    error instanceof CourseRefreshRequestError &&
+    error.retryAfterSeconds !== null
+      ? error.retryAfterSeconds * 1000
+      : COURSE_AUTO_REFRESH_RETRY_MS;
+  return {
+    refreshedAt: previous?.refreshedAt ?? null,
+    nextAttemptAt: now + retryAfterMs,
+  };
 }
 
 export function catalogSessionsMatchPlan(

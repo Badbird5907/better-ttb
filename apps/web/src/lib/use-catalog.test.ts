@@ -2,12 +2,16 @@ import type { Course } from "@better-ttb/shared";
 import { describe, expect, it } from "vitest";
 
 import { csc108Course } from "@/server/__fixtures__/ttb-pageable-csc108";
+import { CourseRefreshRequestError } from "@/stores/catalog";
 import type { Plan } from "@/stores/plan";
 import {
   catalogSessionsMatchPlan,
+  claimCourseAutoRefresh,
   collectPinnedCourses,
   COURSE_AUTO_REFRESH_AFTER_MS,
+  COURSE_AUTO_REFRESH_CLAIM_MS,
   isCourseAutoRefreshDue,
+  nextCourseAutoRefreshTiming,
   type AutoRefreshTiming,
 } from "./use-catalog";
 
@@ -74,5 +78,55 @@ describe("pinned course auto refresh", () => {
 
     expect(isCourseAutoRefreshDue(key, now, timings)).toBe(false);
     expect(isCourseAutoRefreshDue(key, now + 45_000, timings)).toBe(true);
+  });
+
+  it("claims a course auto refresh for two minutes", () => {
+    const now = Date.parse("2026-07-10T13:00:00.000Z");
+    const key = "20269:course-id";
+    const timings = new Map<string, AutoRefreshTiming>();
+
+    expect(claimCourseAutoRefresh("20269", "course-id", now, timings)).toBe(true);
+    expect(timings.get(key)).toEqual({
+      refreshedAt: null,
+      nextAttemptAt: now + COURSE_AUTO_REFRESH_CLAIM_MS,
+    });
+    expect(
+      claimCourseAutoRefresh("20269", "course-id", now + 60_000, timings),
+    ).toBe(false);
+    expect(
+      claimCourseAutoRefresh(
+        "20269",
+        "course-id",
+        now + COURSE_AUTO_REFRESH_CLAIM_MS,
+        timings,
+      ),
+    ).toBe(true);
+  });
+
+  it("uses server Retry-After metadata when scheduling another attempt", () => {
+    const now = Date.parse("2026-07-10T13:00:00.000Z");
+    const previous = { refreshedAt: now - 60_000, nextAttemptAt: 0 };
+
+    expect(
+      nextCourseAutoRefreshTiming(
+        previous,
+        new CourseRefreshRequestError(429, 45),
+        now,
+      ),
+    ).toEqual({
+      refreshedAt: previous.refreshedAt,
+      nextAttemptAt: now + 45_000,
+    });
+  });
+
+  it("uses the default retry delay for other refresh failures", () => {
+    const now = Date.parse("2026-07-10T13:00:00.000Z");
+
+    expect(
+      nextCourseAutoRefreshTiming(undefined, new Error("offline"), now),
+    ).toEqual({
+      refreshedAt: null,
+      nextAttemptAt: now + 5 * 60_000,
+    });
   });
 });

@@ -213,7 +213,10 @@ function TimetableRoute() {
   const [refreshingCourseKey, setRefreshingCourseKey] = React.useState<
     string | null
   >(null);
-  const [refreshError, setRefreshError] = React.useState<string | null>(null);
+  const [refreshError, setRefreshError] = React.useState<{
+    courseKey: string;
+    message: string;
+  } | null>(null);
   const [workerState, setWorkerState] = React.useState<"idle" | "running" | "done" | "error">("idle");
   const [workerError, setWorkerError] = React.useState<string | null>(null);
   const [generationResult, setGenerationResult] = React.useState<GenerationResult | null>(null);
@@ -396,13 +399,15 @@ function TimetableRoute() {
     try {
       await refreshCatalogCourse(course);
     } catch (refreshErrorValue) {
-      setRefreshError(
-        refreshErrorValue instanceof Error
-          ? refreshErrorValue.message
-          : String(refreshErrorValue),
-      );
+      setRefreshError({
+        courseKey: key,
+        message:
+          refreshErrorValue instanceof Error
+            ? refreshErrorValue.message
+            : String(refreshErrorValue),
+      });
     } finally {
-      setRefreshingCourseKey(null);
+      setRefreshingCourseKey((current) => (current === key ? null : current));
     }
   }
 
@@ -1004,7 +1009,11 @@ function TimetableRoute() {
           course={selectedCourse}
           activePlan={activePlan}
           planSelectedSections={planSelectedSections}
-          refreshError={refreshError}
+          refreshError={
+            selectedCourseKey === refreshError?.courseKey
+              ? refreshError.message
+              : null
+          }
           refreshing={selectedCourseKey === refreshingCourseKey}
           pinned={selectedCoursePinned}
           graph={graph}
