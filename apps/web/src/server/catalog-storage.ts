@@ -198,7 +198,7 @@ async function readVersion(
 
   if (request.headers.get("Accept-Encoding")?.includes("gzip")) {
     headers.set("Content-Encoding", "gzip");
-    return new Response(body, { headers });
+    return new Response(body, { headers, encodeBody: "manual" });
   }
 
   return new Response(await gunzip(body), { headers });
