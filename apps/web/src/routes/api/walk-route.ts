@@ -2,9 +2,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
 
 import buildingsData from "@/data/buildings.json";
+import { BUILDING_DATA_VERSION } from "@/lib/buildings";
 import { bindings } from "@/server/env";
 
-interface BuildingRecord {
+export interface BuildingRecord {
   code: string;
   lat: number;
   lng: number;
@@ -21,7 +22,15 @@ const BUILDINGS_BY_CODE = new Map<string, BuildingRecord>(
   (buildingsData as BuildingRecord[]).map((building) => [building.code, building]),
 );
 
+export function lookupBuildingRecord(code: string): BuildingRecord | null {
+  return BUILDINGS_BY_CODE.get(code.trim().toUpperCase()) ?? null;
+}
+
 const OSRM_BASE = "https://routing.openstreetmap.de/routed-foot/route/v1/foot";
+
+export function walkRouteCacheKey(from: string, to: string): string {
+  return `route:${BUILDING_DATA_VERSION}:${from.trim().toUpperCase()}:${to.trim().toUpperCase()}`;
+}
 
 export const Route = createFileRoute("/api/walk-route")({
   server: {
@@ -31,8 +40,8 @@ export const Route = createFileRoute("/api/walk-route")({
         const from = (url.searchParams.get("from") ?? "").trim().toUpperCase();
         const to = (url.searchParams.get("to") ?? "").trim().toUpperCase();
 
-        const origin = BUILDINGS_BY_CODE.get(from);
-        const destination = BUILDINGS_BY_CODE.get(to);
+        const origin = lookupBuildingRecord(from);
+        const destination = lookupBuildingRecord(to);
 
         if (!origin || !destination) {
           return Response.json({ error: "invalid_building_code" }, { status: 400 });
@@ -42,7 +51,7 @@ export const Route = createFileRoute("/api/walk-route")({
           "Content-Type": "application/json",
           "Cache-Control": "public, max-age=31536000",
         };
-        const key = `route:v1:${from}:${to}`;
+        const key = walkRouteCacheKey(from, to);
         const cached = await bindings.KV.get(key);
 
         if (cached) {
@@ -75,7 +84,8 @@ export const Route = createFileRoute("/api/walk-route")({
         }
 
         const body = JSON.stringify(route);
-        // Permanent cache: campus walking geometry does not change.
+        // The versioned URL and KV key make this response immutable for the
+        // current vendored building coordinates.
         await bindings.KV.put(key, body);
 
         return new Response(body, { headers });

@@ -8,6 +8,7 @@ import {
   hasTightTransfer,
   type BuildingIndex,
 } from "./itinerary";
+import { BUILDING_INDEX } from "./buildings";
 import { selectedSectionKey, type SelectedTimetableSection } from "./timetable";
 
 // Real UofT coordinates so walkMinutes produces realistic values.
@@ -73,6 +74,25 @@ describe("buildDayItinerary", () => {
     expect(transfer.severity).toBe("ok");
   });
 
+  it("resolves the POL106 TL1013 to MAT224 BF323 transfer as tight", () => {
+    const selections = [
+      section("POL106H1", "F", "TUT", "TUT1002", meeting(4, "15:00", "16:00", "TL", "1013")),
+      section("MAT224H1", "F", "TUT", "TUT0204", meeting(4, "16:00", "17:00", "BF", "323")),
+    ];
+
+    const itinerary = buildDayItinerary(selections, BUILDING_INDEX, "fall", 4);
+
+    expect(itinerary.markers.map((marker) => marker.buildingCode)).toEqual(["TL", "BF"]);
+    expect(itinerary.unknownLocations).toEqual([]);
+    expect(itinerary.transfers).toHaveLength(1);
+    expect(itinerary.transfers[0]).toMatchObject({
+      gapMin: 0,
+      graceGapMin: 10,
+      severity: "tight",
+    });
+    expect(itinerary.transfers[0]!.walkMin).toBeCloseTo(11.7, 1);
+  });
+
   it("classifies transfers as ok, warn, and tight", () => {
     expect(classifyTransfer(60, 5)).toBe("ok");
     // walk <= gap * 0.75 is comfortable.
@@ -111,6 +131,19 @@ describe("buildDayItinerary", () => {
 
     expect(itinerary.markers).toHaveLength(0);
     expect(itinerary.unknownLocations).toHaveLength(0);
+  });
+
+  it("treats ON LINE as non-geographic instead of an unknown building", () => {
+    const selections = [
+      section("PHL245H1", "S", "LEC", "LEC0101", meeting(1, "15:00", "17:00", "ON", "LINE", "20271")),
+    ];
+
+    const itinerary = buildDayItinerary(selections, BUILDINGS, "winter", 1);
+
+    expect(itinerary.markers).toHaveLength(0);
+    expect(itinerary.transfers).toHaveLength(0);
+    expect(itinerary.unknownLocations).toHaveLength(0);
+    expect(daysWithClasses(selections, BUILDINGS, "winter")).toEqual([]);
   });
 
   it("respects the term filter for fall-only and winter-only courses", () => {

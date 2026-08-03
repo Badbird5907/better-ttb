@@ -1003,9 +1003,9 @@
     "name": "Odette (Louis) Hall",
     "shortName": "Odette Hall",
     "address": "50 St. Joseph Street, Toronto",
-    "lat": 43.66635389249167,
-    "lng": -79.3889071873712,
-    "source": "cobalt-2017"
+    "lat": 43.666409,
+    "lng": -79.388664,
+    "source": "concept3d-live-494594"
   },
   {
     "code": "OI",
@@ -1114,6 +1114,15 @@
     "lat": 43.65857109807999,
     "lng": -79.3936037353563,
     "source": "cobalt-2017"
+  },
+  {
+    "code": "RO",
+    "name": "Royal Ontario Museum",
+    "shortName": "ROM",
+    "address": "100 Queen's Park, Toronto",
+    "lat": 43.667709,
+    "lng": -79.394775,
+    "source": "concept3d-live-497525"
   },
   {
     "code": "RS",
@@ -1330,6 +1339,15 @@
     "lat": 43.66476093699955,
     "lng": -79.3906519643354,
     "source": "cobalt-2017"
+  },
+  {
+    "code": "TL",
+    "name": "Lawson Centre",
+    "shortName": "Lawson Centre",
+    "address": "6 Hoskin Ave, Toronto",
+    "lat": 43.6660807,
+    "lng": -79.3967084,
+    "source": "lsm+nominatim-osm-way-1545519650"
   },
   {
     "code": "TR",

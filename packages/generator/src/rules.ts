@@ -1,5 +1,6 @@
 import type { DayNumber, MeetingTime } from "@better-ttb/shared";
 import {
+  isNonGeographicMeetingBuilding,
   isSectionWaitlisted,
   UOFT_TRANSFER_GRACE_MINUTES,
   walkSecondsFromMap,
@@ -605,6 +606,10 @@ function buildTransfers(
           continue;
         }
 
+        if (!isOnCampusMeeting(current) || !isOnCampusMeeting(next)) {
+          continue;
+        }
+
         const gapMin = meetingStartMinutes(next.meeting) - meetingEndMinutes(current.meeting);
         if (gapMin < 0) {
           continue;
@@ -687,7 +692,14 @@ function largestFreeBlockMinutes(
 }
 
 function daysForMeetings(meetings: ScheduledMeeting[]): DayNumber[] {
-  return sortDays(new Set(meetings.map((meeting) => meeting.day)));
+  return sortDays(new Set(meetings.filter(isOnCampusMeeting).map((meeting) => meeting.day)));
+}
+
+function isOnCampusMeeting(meeting: ScheduledMeeting): boolean {
+  return (
+    meeting.meeting.building.buildingCode.trim().length > 0 &&
+    !isNonGeographicMeetingBuilding(meeting.meeting.building)
+  );
 }
 
 function compareScheduledMeetings(first: ScheduledMeeting, second: ScheduledMeeting): number {
@@ -731,4 +743,3 @@ function clamp01(value: number): number {
 
   return Math.max(0, Math.min(1, value));
 }
-
