@@ -63,6 +63,36 @@ describe("catalog storage", () => {
     );
   });
 
+  it("tells Workers that stored gzip bytes are already encoded", async () => {
+    const kv = new MemoryKv();
+    const catalog = makeCatalog("2026-07-10T12:00:00.000Z");
+    await publishCatalog(kv, catalog, 9, "2026-07-10T12:01:00.000Z");
+
+    const NativeResponse = globalThis.Response;
+    let capturedInit: ResponseInit | undefined;
+    class CapturingResponse extends NativeResponse {
+      constructor(body?: BodyInit | null, init?: ResponseInit) {
+        super(body, init);
+        capturedInit = init;
+      }
+    }
+    globalThis.Response = CapturingResponse;
+
+    try {
+      await getCatalogResponse(
+        kv,
+        catalog.sessions,
+        new Request("https://example.test/api/catalog", {
+          headers: { "Accept-Encoding": "gzip" },
+        }),
+      );
+    } finally {
+      globalThis.Response = NativeResponse;
+    }
+
+    expect(capturedInit?.encodeBody).toBe("manual");
+  });
+
   it("falls back to the previous version when the active blob is unavailable", async () => {
     const kv = new MemoryKv();
     const first = makeCatalog("2026-07-10T12:00:00.000Z");
