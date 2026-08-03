@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
 
 import buildingsData from "@/data/buildings.json";
+import { BUILDING_DATA_VERSION } from "@/lib/buildings";
 import { bindings } from "@/server/env";
 
 export interface BuildingRecord {
@@ -27,6 +28,10 @@ export function lookupBuildingRecord(code: string): BuildingRecord | null {
 
 const OSRM_BASE = "https://routing.openstreetmap.de/routed-foot/route/v1/foot";
 
+export function walkRouteCacheKey(from: string, to: string): string {
+  return `route:${BUILDING_DATA_VERSION}:${from.trim().toUpperCase()}:${to.trim().toUpperCase()}`;
+}
+
 export const Route = createFileRoute("/api/walk-route")({
   server: {
     handlers: {
@@ -46,7 +51,7 @@ export const Route = createFileRoute("/api/walk-route")({
           "Content-Type": "application/json",
           "Cache-Control": "public, max-age=31536000",
         };
-        const key = `route:v1:${from}:${to}`;
+        const key = walkRouteCacheKey(from, to);
         const cached = await bindings.KV.get(key);
 
         if (cached) {
@@ -79,7 +84,8 @@ export const Route = createFileRoute("/api/walk-route")({
         }
 
         const body = JSON.stringify(route);
-        // Permanent cache: campus walking geometry does not change.
+        // The versioned URL and KV key make this response immutable for the
+        // current vendored building coordinates.
         await bindings.KV.put(key, body);
 
         return new Response(body, { headers });

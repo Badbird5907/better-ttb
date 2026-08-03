@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import buildingsData from "@/data/buildings.json";
 import matrixData from "@/data/walk-matrix.json";
-import { BUILDING_INDEX } from "@/lib/buildings";
+import {
+  BUILDING_DATA_VERSION,
+  BUILDING_INDEX,
+  computeBuildingDataVersion,
+} from "@/lib/buildings";
 import { lookupWalkSeconds, type WalkMatrix } from "@/lib/walk-matrix";
 
 interface BuildingRecord {
@@ -59,5 +63,15 @@ describe("vendored building geography", () => {
     expect(seconds).not.toBeNull();
     expect(seconds!).toBeGreaterThanOrEqual(10 * 60);
     expect(seconds!).toBeLessThanOrEqual(15 * 60);
+  });
+
+  it("changes the route-cache version when OH coordinates move", () => {
+    const oldCoordinates = [{ code: "OH", lat: 43.66635389249167, lng: -79.3889071873712 }];
+    const movedCoordinates = [{ code: "OH", lat: 43.666409, lng: -79.388664 }];
+
+    expect(computeBuildingDataVersion(oldCoordinates)).not.toBe(
+      computeBuildingDataVersion(movedCoordinates),
+    );
+    expect(BUILDING_DATA_VERSION).toMatch(/^b1-[a-z0-9]+$/);
   });
 });

@@ -4,6 +4,8 @@
  * per session (the server also caches permanently in KV).
  */
 
+import { BUILDING_DATA_VERSION } from "@/lib/buildings";
+
 /** A walking route returned by `/api/walk-route`. Coordinates are `[lat, lng]`. */
 export interface WalkRoute {
   durationSeconds: number;
@@ -14,7 +16,17 @@ export interface WalkRoute {
 const cache = new Map<string, WalkRoute>();
 
 function cacheKey(from: string, to: string): string {
-  return `${from.trim().toUpperCase()}|${to.trim().toUpperCase()}`;
+  return `${BUILDING_DATA_VERSION}:${from.trim().toUpperCase()}|${to.trim().toUpperCase()}`;
+}
+
+export function walkRouteRequestUrl(from: string, to: string): string {
+  const params = new URLSearchParams({
+    v: BUILDING_DATA_VERSION,
+    from: from.trim().toUpperCase(),
+    to: to.trim().toUpperCase(),
+  });
+
+  return `/api/walk-route?${params.toString()}`;
 }
 
 /**
@@ -37,7 +49,7 @@ export async function fetchWalkRoute(
 
   try {
     const response = await fetch(
-      `/api/walk-route?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      walkRouteRequestUrl(from, to),
       signal ? { signal } : undefined,
     );
 
