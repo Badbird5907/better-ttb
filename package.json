@@ -9,6 +9,7 @@
     "buildings:matrix": "node tools/build-walk-matrix.mjs",
     "buildings:refresh": "node tools/refresh-buildings.mjs",
     "dev": "turbo dev",
+    "programs:refresh": "tsx tools/refresh-programs.ts",
     "typecheck": "turbo typecheck",
     "test": "turbo test && node --test tools/building-refresh-lib.test.mjs",
     "deploy": "turbo build && pnpm run sourcemaps:upload && alchemy deploy alchemy.run.ts --env-file .env",
