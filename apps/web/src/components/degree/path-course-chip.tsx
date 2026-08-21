@@ -83,16 +83,16 @@ export function PathCourseChip({
   // of them.
   const inProgressCodes = useInProgressCourseSet();
 
-  const graphNode = graph?.nodes.get(code) ?? null;
-  const inCatalog = graphNode?.inCatalog ?? false;
-  const resolved = status ?? courseStatus(code, minGrade, completed);
   const normalizedCode = code.trim().toUpperCase();
+  const graphNode = graph?.nodes.get(normalizedCode) ?? null;
+  const inCatalog = graphNode?.inCatalog ?? false;
+  const resolved = status ?? courseStatus(normalizedCode, minGrade, completed);
   const isCompleted = Object.prototype.hasOwnProperty.call(
     completed,
     normalizedCode,
   );
   const grade = completed[normalizedCode] ?? null;
-  const canToggle = isValidCourseCode(code);
+  const canToggle = isValidCourseCode(normalizedCode);
   // Completed wins: a course you already passed is done, not in progress.
   const isInProgress = !isCompleted && inProgressCodes.has(normalizedCode);
 

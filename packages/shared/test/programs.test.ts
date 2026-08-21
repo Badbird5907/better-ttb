@@ -85,9 +85,17 @@ describe("courseSubject / courseLevel", () => {
     expect(courseLevel("CSC490H1")).toBe(400);
   });
 
+  it("reads the fourth letter as the level on UTSC/UTM codes", () => {
+    expect(courseLevel("CSCA08H3")).toBe(100);
+    expect(courseLevel("CSCB36H3")).toBe(200);
+    expect(courseLevel("CSCC69H3")).toBe(300);
+    expect(courseLevel("CSCD01H3")).toBe(400);
+  });
+
   it("returns null for malformed codes", () => {
     expect(courseSubject("nope")).toBeNull();
     expect(courseLevel("nope")).toBeNull();
+    expect(courseLevel("CSCE01H3")).toBeNull();
   });
 });
 

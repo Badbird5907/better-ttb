@@ -69,7 +69,7 @@ export function CompletedCoursesBulkImport({
           />
         </Button>
         {addedCount !== null && !open && (
-          <span className="text-xs text-muted-foreground">
+          <span role="status" className="text-xs text-muted-foreground">
             {addedCount === 0
               ? "Nothing new to add."
               : `Added ${addedCount} ${addedCount === 1 ? "course" : "courses"}.`}

@@ -37,8 +37,13 @@ export function loadProgramCatalog(): Promise<ProgramCatalog> {
         if (!response.ok) {
           throw new Error(`Program catalogue request failed (${response.status})`);
         }
-        const catalog = (await response.json()) as ProgramCatalog;
-        if (catalog.version !== 1 || !Array.isArray(catalog.programs)) {
+        const catalog = (await response.json()) as ProgramCatalog | null;
+        if (
+          catalog === null ||
+          typeof catalog !== "object" ||
+          catalog.version !== 1 ||
+          !Array.isArray(catalog.programs)
+        ) {
           throw new Error("Program catalogue has an unexpected shape");
         }
         cachedCatalog = catalog;

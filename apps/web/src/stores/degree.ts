@@ -103,6 +103,13 @@ export const useDegreePlanStore = create<DegreePlanStore>()(
         manualOverrides: state.manualOverrides,
       }),
       migrate: (persisted) => migrateDegreePlanState(persisted),
+      // `migrate` only runs on a version mismatch, so a same-version payload
+      // that was corrupted by hand (e.g. `selectedPrograms: null`) would be
+      // shallow-merged in untouched. Re-validate on every rehydrate.
+      merge: (persisted, current) => ({
+        ...current,
+        ...migrateDegreePlanState(persisted),
+      }),
     },
   ),
 );

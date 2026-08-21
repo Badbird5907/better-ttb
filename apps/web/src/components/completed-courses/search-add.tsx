@@ -152,6 +152,11 @@ export function CompletedCoursesSearch({
                         added ? "text-primary opacity-100" : "opacity-20",
                       )}
                     />
+                    <span className="sr-only">
+                      {added
+                        ? "Already added — select to remove."
+                        : "Not added — select to add."}
+                    </span>
                     <span className="min-w-0 flex-1 truncate">
                       <span className="font-mono font-medium">{entry.code}</span>
                       <span className="text-muted-foreground">

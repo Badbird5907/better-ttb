@@ -115,6 +115,19 @@ function DegreeRoute() {
     deepLinkParam,
   );
   const deepLinkHandled = React.useRef(false);
+  // The scroll timeout must survive dependency churn (`programsById` gets a
+  // new identity whenever the catalog updates): the effect runs its body at
+  // most once, so a dependency-driven cleanup would cancel the scroll without
+  // ever rescheduling it. Clear on unmount only.
+  const deepLinkTimeout = React.useRef<number | null>(null);
+  React.useEffect(
+    () => () => {
+      if (deepLinkTimeout.current !== null) {
+        window.clearTimeout(deepLinkTimeout.current);
+      }
+    },
+    [],
+  );
 
   React.useEffect(() => {
     if (deepLinkParam === null || deepLinkHandled.current) {
@@ -140,14 +153,12 @@ function DegreeRoute() {
 
     // Let the card mount before scrolling to it, and only drop the param
     // afterwards so clearing it cannot cancel this timeout.
-    const timeout = window.setTimeout(() => {
+    deepLinkTimeout.current = window.setTimeout(() => {
       document
         .getElementById(programCardDomId(deepLinkParam))
         ?.scrollIntoView({ behavior: "smooth", block: "start" });
       clearParam();
     }, 60);
-
-    return () => window.clearTimeout(timeout);
   }, [addProgram, deepLinkParam, navigate, programsById, status]);
 
   const [focusCode, setFocusCode] = React.useState<string | null>(null);

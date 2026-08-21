@@ -136,13 +136,27 @@ export function courseSubject(code: string): string | null {
   return match?.[1] ?? null;
 }
 
-/** Course level, e.g. "CSC373H1" -> 300, "CSCC69H3" -> 300. */
+/**
+ * Course level, e.g. "CSC373H1" -> 300, "CSCC69H3" -> 300.
+ *
+ * St. George codes carry the level in the first of three digits; UTSC/UTM
+ * codes are four letters + two digits, with the fourth letter as the level
+ * (A=100 ... D=400). A greedy `[A-Z]{3,4}` must not eat the fourth letter and
+ * then read a course-number digit as the level.
+ */
 export function courseLevel(code: string): number | null {
-  const match = code.match(/^[A-Z]{3,4}(\d)/);
-  const digit = match?.[1];
-  if (digit === undefined) return null;
-  const value = Number.parseInt(digit, 10);
-  return value >= 1 && value <= 9 ? value * 100 : null;
+  const stGeorge = code.match(/^[A-Z]{3}(\d)\d{2}/);
+  if (stGeorge?.[1] !== undefined) {
+    const value = Number.parseInt(stGeorge[1], 10);
+    return value >= 1 && value <= 9 ? value * 100 : null;
+  }
+
+  const suburban = code.match(/^[A-Z]{3}([A-D])\d{2}/);
+  if (suburban?.[1] !== undefined) {
+    return (suburban[1].charCodeAt(0) - 64) * 100;
+  }
+
+  return null;
 }
 
 /**

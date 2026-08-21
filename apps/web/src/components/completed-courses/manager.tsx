@@ -67,6 +67,15 @@ export function CompletedCoursesManager({
     setConfirmingClear(false);
   }
 
+  // Clicking "Clear all" swaps the button out for the confirmation, which
+  // would otherwise drop keyboard focus onto the document body.
+  const confirmClearRef = React.useRef<HTMLButtonElement>(null);
+  React.useEffect(() => {
+    if (confirmingClear) {
+      confirmClearRef.current?.focus();
+    }
+  }, [confirmingClear]);
+
   return (
     <div className={cn("flex min-h-0 flex-col gap-3", className)}>
       <CompletedCoursesSearch />
@@ -87,8 +96,11 @@ export function CompletedCoursesManager({
         {courseCount > 0 &&
           (confirmingClear ? (
             <div className="flex items-center gap-1">
-              <span className="text-xs text-muted-foreground">Remove all?</span>
+              <span role="alert" className="text-xs text-muted-foreground">
+                Remove all?
+              </span>
               <Button
+                ref={confirmClearRef}
                 type="button"
                 variant="destructive"
                 size="xs"

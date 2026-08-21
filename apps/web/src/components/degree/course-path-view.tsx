@@ -103,7 +103,7 @@ export function CoursePathView({
       sectionCode={offering?.sectionCode ?? null}
       prereq={prereq}
       completed={completed}
-      inTimetable={inProgress.set.has(code)}
+      inTimetable={inProgress.set.has(code.trim().toUpperCase())}
     />
   );
 
@@ -579,7 +579,14 @@ function StepMarker({
             : MUTED_PILL,
       )}
     >
-      {status === "met" ? <Check className="size-3" /> : index + 1}
+      {status === "met" ? (
+        <>
+          <Check className="size-3" aria-hidden />
+          <span className="sr-only">Requirement {index + 1} satisfied</span>
+        </>
+      ) : (
+        index + 1
+      )}
     </span>
   );
 }

@@ -34,7 +34,10 @@ const DEFAULT_OUT = resolve(ROOT, "apps/web/public/programs.json");
 const ORIGIN = "https://artsci.calendar.utoronto.ca";
 const SOURCE = `${ORIGIN}/jsonapi/node/programs`;
 const PAGE_LIMIT = 50; // The API silently caps `page[limit]` at 50.
+const MAX_PAGES = 50; // ~411 programs today; a runaway `links.next` loop backstop.
 const REQUEST_DELAY_MS = 300;
+const REQUEST_TIMEOUT_MS = 30_000;
+const RETRY_BACKOFF_MS = [500, 2_000, 8_000] as const;
 const USER_AGENT =
   "better-ttb-degree-planner/1.0 (U of T timetable tool; +https://github.com/Badbird5907/better-ttb)";
 
@@ -85,28 +88,93 @@ async function fetchAllPrograms(log: (message: string) => void): Promise<
 
   while (url !== null) {
     page += 1;
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept: "application/vnd.api+json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`GET ${url} failed: ${response.status} ${response.statusText}`);
+    if (page > MAX_PAGES) {
+      throw new Error(
+        `Pagination exceeded ${MAX_PAGES} pages — refusing to follow further ` +
+          `\`links.next\` chains (last URL: ${url})`,
+      );
     }
 
+    const response = await fetchWithRetry(url, log);
     const body = (await response.json()) as JsonApiPage;
     const data = body.data ?? [];
     resources.push(...data);
     log(`  page ${page}: +${data.length} (${resources.length} total)`);
 
-    const next = body.links?.next?.href;
-    url = typeof next === "string" && next.length > 0 ? next : null;
+    url = nextPageUrl(body.links?.next?.href);
     if (url !== null) await sleep(REQUEST_DELAY_MS);
   }
 
   return resources;
+}
+
+/**
+ * `links.next` comes from the response body, so treat it as untrusted: resolve
+ * it against the calendar origin and refuse to follow cross-origin links.
+ * (Node's fetch also rejects relative URLs outright.)
+ */
+function nextPageUrl(next: unknown): string | null {
+  if (typeof next !== "string" || next.length === 0) return null;
+
+  let resolved: URL;
+  try {
+    resolved = new URL(next, ORIGIN);
+  } catch {
+    throw new Error(`Refusing to follow malformed \`links.next\`: ${next}`);
+  }
+
+  if (resolved.origin !== ORIGIN) {
+    throw new Error(`Refusing to follow cross-origin \`links.next\`: ${next}`);
+  }
+
+  return resolved.href;
+}
+
+/** Transient failures (network, 429, 5xx) retry with bounded backoff. */
+async function fetchWithRetry(
+  url: string,
+  log: (message: string) => void,
+): Promise<Response> {
+  for (let attempt = 0; ; attempt += 1) {
+    let response: Response | null = null;
+    let networkError: unknown = null;
+
+    try {
+      response = await fetch(url, {
+        headers: {
+          "User-Agent": USER_AGENT,
+          Accept: "application/vnd.api+json",
+        },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (error) {
+      networkError = error;
+    }
+
+    if (response !== null && response.ok) return response;
+
+    const retryable =
+      networkError !== null ||
+      (response !== null &&
+        (response.status === 429 || response.status >= 500));
+    const backoff = RETRY_BACKOFF_MS[attempt];
+
+    if (!retryable || backoff === undefined) {
+      if (response !== null) {
+        throw new Error(
+          `GET ${url} failed: ${response.status} ${response.statusText}`,
+        );
+      }
+      throw new Error(`GET ${url} failed: ${String(networkError)}`);
+    }
+
+    log(
+      `  retrying ${url} in ${backoff}ms (${
+        response !== null ? `HTTP ${response.status}` : String(networkError)
+      })`,
+    );
+    await sleep(backoff);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -286,9 +354,14 @@ async function main(): Promise<void> {
 
   if (cachePath !== null) {
     try {
-      resources = JSON.parse(await readFile(resolve(cachePath), "utf8")) as
-        ProgramResource[];
-      log(`using cached JSON:API dump (${resources.length} records)`);
+      const parsed: unknown = JSON.parse(
+        await readFile(resolve(cachePath), "utf8"),
+      );
+      // A cache file holding anything but an array falls back to fetching.
+      resources = Array.isArray(parsed) ? (parsed as ProgramResource[]) : null;
+      if (resources !== null) {
+        log(`using cached JSON:API dump (${resources.length} records)`);
+      }
     } catch {
       resources = null;
     }
