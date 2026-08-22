@@ -14,6 +14,10 @@ interface PersistedCompletedCoursesState {
 
 interface CompletedCoursesActions {
   setCourse: (code: string, grade: CompletedCourseGrade) => void;
+  /** Adds every valid code that isn't already tracked, keeping existing grades. */
+  addMany: (codes: string[]) => void;
+  /** Adds the course with no grade, or removes it when already tracked. */
+  toggleCourse: (code: string) => void;
   removeCourse: (code: string) => void;
   clearAll: () => void;
 }
@@ -50,6 +54,46 @@ export const useCompletedCoursesStore = create<CompletedCoursesStore>()(
               ...state.courses,
               [normalizedCode]: normalizeGrade(grade),
             },
+          };
+        }),
+      addMany: (codes) =>
+        set((state) => {
+          const courses = { ...state.courses };
+          let added = false;
+
+          codes.forEach((code) => {
+            const normalizedCode = normalizeCourseCode(code);
+
+            if (
+              !isValidCourseCode(normalizedCode) ||
+              normalizedCode in courses
+            ) {
+              return;
+            }
+
+            courses[normalizedCode] = null;
+            added = true;
+          });
+
+          return added ? { courses } : {};
+        }),
+      toggleCourse: (code) =>
+        set((state) => {
+          const normalizedCode = normalizeCourseCode(code);
+
+          if (!isValidCourseCode(normalizedCode)) {
+            return {};
+          }
+
+          if (normalizedCode in state.courses) {
+            const courses = { ...state.courses };
+            delete courses[normalizedCode];
+
+            return { courses };
+          }
+
+          return {
+            courses: { ...state.courses, [normalizedCode]: null },
           };
         }),
       removeCourse: (code) =>
