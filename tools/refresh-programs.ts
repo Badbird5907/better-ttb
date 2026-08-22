@@ -96,12 +96,21 @@ async function fetchAllPrograms(log: (message: string) => void): Promise<
     }
 
     const response = await fetchWithRetry(url, log);
-    const body = (await response.json()) as JsonApiPage;
-    const data = body.data ?? [];
-    resources.push(...data);
-    log(`  page ${page}: +${data.length} (${resources.length} total)`);
+    const body: unknown = await response.json();
+    // A malformed 200 must abort the run: treating it as an empty page would
+    // silently truncate the catalog that overwrites programs.json.
+    if (
+      body === null ||
+      typeof body !== "object" ||
+      !Array.isArray((body as JsonApiPage).data)
+    ) {
+      throw new Error(`GET ${url} returned a malformed JSON:API page`);
+    }
+    const parsed = body as JsonApiPage & { data: ProgramResource[] };
+    resources.push(...parsed.data);
+    log(`  page ${page}: +${parsed.data.length} (${resources.length} total)`);
 
-    url = nextPageUrl(body.links?.next?.href);
+    url = nextPageUrl(parsed.links?.next?.href);
     if (url !== null) await sleep(REQUEST_DELAY_MS);
   }
 
