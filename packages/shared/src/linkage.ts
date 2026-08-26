@@ -58,9 +58,24 @@ export function sectionAllowedByLinkage(
     return candidatePointsToSelected || selectedPointsToCandidate;
   }
 
-  // Empty array: candidate declares no outgoing links.
-  // Allowed only if another selected section explicitly links to it.
-  return o.has(candidate.name);
+  // Empty array: the candidate declares no linkage of its own, so nothing about
+  // it is inherently restricted. It is ruled out only by a selected section that
+  // *does* declare links into the candidate's teach method and leaves it out —
+  // picking TUT0201 (→ LEC0101) is what rules out every other lecture.
+  //
+  // Reading "[]" as "allowed only when something points at me" instead strands
+  // sections like CSC207H1 TUT0501, where the tutorial and all five lectures
+  // carry "[]", so nothing points anywhere and no lecture is ever selectable.
+  return others.every((other) => {
+    const constraints = (other.linkedMeetingSections ?? []).filter(
+      (ref) => ref.teachMethod === candidate.teachMethod,
+    );
+
+    return (
+      constraints.length === 0 ||
+      constraints.some((ref) => linkedSectionName(ref) === candidate.name)
+    );
+  });
 }
 
 /**

@@ -103,9 +103,9 @@ describe("sectionAllowedByLinkage — LEC0101 selected", () => {
     expect(sectionAllowedByLinkage(TUT0302, selected)).toBe(false);
   });
 
-  it("disallows TUT0501 (empty array — not pointed to by LEC0101)", () => {
-    // LEC0101 has [] so o is empty; TUT0501 has [] so it needs o to contain its name
-    expect(sectionAllowedByLinkage(TUT0501, selected)).toBe(false);
+  it("allows TUT0501 (empty array — LEC0101 declares no linkage to restrict it)", () => {
+    // Both carry []. Neither constrains the other, so the pairing is open.
+    expect(sectionAllowedByLinkage(TUT0501, selected)).toBe(true);
   });
 });
 
@@ -143,11 +143,10 @@ describe("sectionAllowedByLinkage — null linkage sections", () => {
     expect(sectionAllowedByLinkage(nullSec, [TUT0302])).toBe(true);
   });
 
-  it("null-linkage in selectedOthers contributes nothing to o (no crash)", () => {
+  it("null-linkage in selectedOthers constrains nothing", () => {
     const nullTut = nullLinkage("TUT9999", "TUT");
-    // nullTut has null links, so o stays empty
-    // LEC0101 has [] → needs o.has("LEC0101") → false
-    expect(sectionAllowedByLinkage(LEC0101, [nullTut])).toBe(false);
+    // nullTut declares no links, so it cannot rule out an empty-array LEC.
+    expect(sectionAllowedByLinkage(LEC0101, [nullTut])).toBe(true);
     // null-linkage LEC → always true
     const nullLec = nullLinkage("LEC9999", "LEC");
     expect(sectionAllowedByLinkage(nullLec, [nullTut])).toBe(true);
@@ -223,8 +222,14 @@ describe("selectionSatisfiesLinkage", () => {
     expect(selectionSatisfiesLinkage([LEC0101, TUT0302])).toBe(false);
   });
 
-  it("invalid pair: LEC0101 + TUT0501 (TUT0501 has [], not pointed to by LEC)", () => {
-    expect(selectionSatisfiesLinkage([LEC0101, TUT0501])).toBe(false);
+  it("valid pair: LEC0101 + TUT0501 (neither side declares a restriction)", () => {
+    expect(selectionSatisfiesLinkage([LEC0101, TUT0501])).toBe(true);
+  });
+
+  it("TUT0501 pairs with every lecture, so it is never a dead end", () => {
+    for (const lecture of [LEC0101, LEC0201, LEC0301]) {
+      expect(selectionSatisfiesLinkage([lecture, TUT0501])).toBe(true);
+    }
   });
 
   it("valid pair: LEC0301 + TUT0302 (mutually consistent)", () => {
@@ -238,10 +243,35 @@ describe("selectionSatisfiesLinkage", () => {
   });
 
   it("null-linkage paired with empty-array section", () => {
-    // nullLec → always allowed from its own perspective
-    // LEC0101 (empty array) → needs o.has("LEC0101"); nullTut has null links, contributes nothing → false
+    // Neither declares a restriction, so the pairing stands.
     const nullTut = nullLinkage("TUT0201", "TUT");
-    expect(selectionSatisfiesLinkage([LEC0101, nullTut])).toBe(false);
+    expect(selectionSatisfiesLinkage([LEC0101, nullTut])).toBe(true);
+  });
+
+  it("an unlinked TUT is still excluded by a lecture that names its tutorials", () => {
+    // A lecture pointing into TUT restricts that method, so an empty-array
+    // tutorial it does not name stays disallowed.
+    const lecNamingTuts: SectionLike = {
+      name: "LEC0101",
+      teachMethod: "LEC",
+      linkedMeetingSections: [
+        { teachMethod: "TUT", sectionNumber: "0201", type: null },
+      ],
+    };
+
+    expect(sectionAllowedByLinkage(TUT0501, [lecNamingTuts])).toBe(false);
+    expect(sectionAllowedByLinkage(TUT0201, [lecNamingTuts])).toBe(true);
+  });
+
+  it("a restriction on another teach method does not touch an unlinked section", () => {
+    // TUT0201 constrains LEC only, so an empty-array PRA is unaffected.
+    const pra: SectionLike = {
+      name: "PRA0101",
+      teachMethod: "PRA",
+      linkedMeetingSections: [],
+    };
+
+    expect(sectionAllowedByLinkage(pra, [TUT0201])).toBe(true);
   });
 
   it("three-way: LEC + matching TUT + null-linkage PRA", () => {
