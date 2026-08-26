@@ -8,7 +8,13 @@ import type {
   SectionCode,
   TeachMethod,
 } from "@better-ttb/shared";
-import { formatDay, isSectionFull, millisofdayToHHMM } from "@better-ttb/shared";
+import {
+  compareSectionsByTime,
+  formatDay,
+  isSectionFull,
+  millisofdayToHHMM,
+  sortedMeetingTimes,
+} from "@better-ttb/shared";
 import { ChevronDown, ChevronRight, Pin, PinOff, RefreshCw } from "lucide-react";
 import * as React from "react";
 
@@ -654,7 +660,7 @@ function SectionRow({
       <td className="max-w-[280px] px-3 py-3 align-top">
         {section.meetingTimes.length > 0 ? (
           <div className="space-y-1">
-            {section.meetingTimes.map((meeting, index) => (
+            {sortedMeetingTimes(section).map((meeting, index) => (
               <div key={`${section.name}-${index}`}>
                 <span>{formatMeetingTime(meeting)}</span>
                 <span className="mx-1 text-muted-foreground">·</span>
@@ -764,9 +770,15 @@ export function groupSectionsByTeachMethod(
     ]);
   });
 
-  return [...groups.entries()].sort(([left], [right]) =>
-    teachMethodRank(left) - teachMethodRank(right) || left.localeCompare(right),
-  );
+  return [...groups.entries()]
+    .map(([teachMethod, group]): [TeachMethod, Section[]] => [
+      teachMethod,
+      [...group].sort(compareSectionsByTime),
+    ])
+    .sort(
+      ([left], [right]) =>
+        teachMethodRank(left) - teachMethodRank(right) || left.localeCompare(right),
+    );
 }
 
 export function getTeachMethods(sections: readonly Section[]): TeachMethod[] {

@@ -10,7 +10,13 @@ import type {
   SectionCode,
   TeachMethod,
 } from "@better-ttb/shared";
-import { formatSessionLabel, isSectionFull, parseSessionCode } from "@better-ttb/shared";
+import {
+  formatSessionLabel,
+  isSectionFull,
+  parseSessionCode,
+  sortSectionsByTime,
+  sortedMeetingTimes,
+} from "@better-ttb/shared";
 import {
   Check,
   ChevronsUpDown,
@@ -1247,8 +1253,10 @@ function PinnedCourseCard({
               ? selectedConflictKey(pinned, selectedSection)
               : null;
             const hasConflict = conflictKey ? conflictKeys.has(conflictKey) : false;
-            const sections = course.sections.filter(
-              (section) => section.teachMethod === teachMethod,
+            const sections = sortSectionsByTime(
+              course.sections.filter(
+                (section) => section.teachMethod === teachMethod,
+              ),
             );
             // Resolve the chosen sections of this course's OTHER teach methods so
             // linkage restrictions for this method's options can be evaluated.
@@ -1744,7 +1752,7 @@ function breadthRank(value: string): number {
 }
 
 function formatSectionOption(section: Section): string {
-  const firstMeeting = section.meetingTimes[0];
+  const firstMeeting = sortedMeetingTimes(section)[0];
   const meeting = firstMeeting ? formatMeetingTime(firstMeeting) : "TBA";
   const room = firstMeeting ? formatRoom(firstMeeting) : "";
   const building = firstMeeting?.building.buildingCode
