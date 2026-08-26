@@ -7,7 +7,12 @@ import type {
   SectionCode,
   TeachMethod,
 } from "@better-ttb/shared";
-import { meetingTimesOverlap, parseSessionCode, sectionAllowedByLinkage } from "@better-ttb/shared";
+import {
+  meetingLocationLabel,
+  meetingTimesOverlap,
+  parseSessionCode,
+  sectionAllowedByLinkage,
+} from "@better-ttb/shared";
 
 import { isSectionWaitlisted } from "@/lib/section-status";
 import type { PinnedCourse, Plan } from "@/stores/plan";
@@ -270,7 +275,11 @@ export function buildTermBlocks(
         courseName: selectedSection.course.name,
         teachMethod: selectedSection.teachMethod,
         sectionName: selectedSection.section.name,
-        room: formatRoom(meeting),
+        room: meetingLocationLabel(
+          meeting.building,
+          selectedSection.section,
+          " ",
+        ),
         buildingCode: meeting.building.buildingCode.trim(),
         day: meeting.start.day,
         startMillis: meeting.start.millisofday,
@@ -571,15 +580,3 @@ function meetingAppliesToTerm(meeting: MeetingTime, term: Term): boolean {
   }
 }
 
-function formatRoom(meeting: MeetingTime): string {
-  const code = meeting.building.buildingCode;
-  const number = meeting.building.buildingRoomNumber;
-  const suffix = meeting.building.buildingRoomSuffix;
-  const room = `${number}${suffix}`.trim();
-
-  if (!code && !room) {
-    return "TBA";
-  }
-
-  return `${code}${room ? ` ${room}` : ""}`.trim();
-}

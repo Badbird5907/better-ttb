@@ -11,8 +11,12 @@ import type {
   TeachMethod,
 } from "@better-ttb/shared";
 import {
+  ONLINE_LOCATION_LABEL,
+  UNKNOWN_LOCATION_LABEL,
   formatSessionLabel,
+  isOnlineOnlySection,
   isSectionFull,
+  meetingLocationLabel,
   parseSessionCode,
   sortSectionsByTime,
   sortedMeetingTimes,
@@ -63,7 +67,6 @@ import {
   formatBreadth,
   formatBreadthShort,
   formatMeetingTime,
-  formatRoom,
   getTeachMethods,
 } from "@/components/course/course-detail-sheet";
 import { cn } from "@/lib/utils";
@@ -1754,12 +1757,13 @@ function breadthRank(value: string): number {
 function formatSectionOption(section: Section): string {
   const firstMeeting = sortedMeetingTimes(section)[0];
   const meeting = firstMeeting ? formatMeetingTime(firstMeeting) : "TBA";
-  const room = firstMeeting ? formatRoom(firstMeeting) : "";
-  const building = firstMeeting?.building.buildingCode
-    ? `${firstMeeting.building.buildingCode}${room}`
-    : "TBA";
+  const location = firstMeeting
+    ? meetingLocationLabel(firstMeeting.building, section)
+    : isOnlineOnlySection(section)
+      ? ONLINE_LOCATION_LABEL
+      : UNKNOWN_LOCATION_LABEL;
 
-  return `${section.name} · ${meeting} · ${building} · ${section.currentEnrolment}/${section.maxEnrolment}`;
+  return `${section.name} · ${meeting} · ${location} · ${section.currentEnrolment}/${section.maxEnrolment}`;
 }
 
 function detectPlanConflictKeys(

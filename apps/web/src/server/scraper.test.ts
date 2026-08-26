@@ -51,7 +51,7 @@ describe("D1-backed catalog scraper", () => {
     expect(catalog.courses).toHaveLength(25);
   });
 
-  it("skips a scheduled run until 24 hours after the prior run started", async () => {
+  it("skips a scheduled run until the refresh interval after the prior run started", async () => {
     const db = new MemoryD1();
     const kv = new MemoryKv();
     db.seedRun({
@@ -65,12 +65,12 @@ describe("D1-backed catalog scraper", () => {
     };
     const result = await runScheduledScrape(
       { sessions: ["20269"] },
-      makeDeps(db, kv, fetchImpl, "2026-07-11T11:59:59.000Z"),
+      makeDeps(db, kv, fetchImpl, "2026-07-10T15:59:59.000Z"),
     );
     expect(result).toBeNull();
   });
 
-  it("starts the next scheduled run at the exact 24-hour boundary", async () => {
+  it("starts the next scheduled run at the exact refresh-interval boundary", async () => {
     const db = new MemoryD1();
     const kv = new MemoryKv();
     db.seedRun({
@@ -85,7 +85,7 @@ describe("D1-backed catalog scraper", () => {
         db,
         kv,
         createPageFetch([makePage([makeCourse(1)], 1, 1)]),
-        "2026-07-11T12:00:00.000Z",
+        "2026-07-10T16:00:00.000Z",
       ),
     );
     expect(result?.status).toBe("complete");
@@ -248,6 +248,71 @@ describe("D1-backed catalog scraper", () => {
     );
     expect(result.status).toBe("complete");
     expect(db.courses.size).toBe(1);
+  });
+
+  it("leaves updated_at alone when a re-scraped course is byte-identical", async () => {
+    const db = new MemoryD1();
+    const run = db.seedRun({
+      started_at: "2026-07-10T12:00:00.000Z",
+      status: "running",
+    });
+    const unchanged = makeCourse(1);
+    db.courses.set(
+      unchanged.id,
+      storedCourseRow(unchanged, {
+        scrapeRunId: 99,
+        updatedAt: "2026-07-09T09:00:00.000Z",
+        liveRefreshedAt: null,
+      }),
+    );
+
+    const result = await runScrapeChunk(
+      { sessions: ["20269"], maxPages: 1 },
+      makeDeps(
+        db,
+        new MemoryKv(),
+        createPageFetch([makePage([structuredClone(unchanged)], 1, 1)]),
+        "2026-07-10T13:00:00.000Z",
+      ),
+    );
+
+    expect(result.status).toBe("complete");
+    const row = db.courses.get(unchanged.id);
+    // A moved updated_at would republish this course through the delta feed
+    // even though nothing about it changed.
+    expect(row?.updated_at).toBe("2026-07-09T09:00:00.000Z");
+    // The run still claims it, so the published artifact stays complete.
+    expect(row?.scrape_run_id).toBe(run.id);
+  });
+
+  it("moves updated_at when a re-scraped course's enrolment changed", async () => {
+    const db = new MemoryD1();
+    db.seedRun({ started_at: "2026-07-10T12:00:00.000Z", status: "running" });
+    const stale = makeCourse(1);
+    stale.sections[0]!.currentEnrolment = 10;
+    db.courses.set(
+      stale.id,
+      storedCourseRow(stale, {
+        scrapeRunId: 99,
+        updatedAt: "2026-07-09T09:00:00.000Z",
+        liveRefreshedAt: null,
+      }),
+    );
+    const fresh = structuredClone(stale) as Course;
+    fresh.sections[0]!.currentEnrolment = 11;
+
+    const result = await runScrapeChunk(
+      { sessions: ["20269"], maxPages: 1 },
+      makeDeps(
+        db,
+        new MemoryKv(),
+        createPageFetch([makePage([fresh], 1, 1)]),
+        "2026-07-10T13:00:00.000Z",
+      ),
+    );
+
+    expect(result.status).toBe("complete");
+    expect(db.courses.get(stale.id)?.updated_at).toBe("2026-07-10T13:00:00.000Z");
   });
 
   it("preserves a detailed refresh completed after the scrape run started", async () => {
@@ -626,9 +691,10 @@ class MemoryStatement implements ScraperStatement {
         data_json: preserveLive
           ? existing!.data_json
           : String(this.values[6]),
-        updated_at: preserveLive
-          ? existing!.updated_at
-          : String(this.values[7]),
+        updated_at:
+          preserveLive || existing?.data_json === String(this.values[6])
+            ? existing!.updated_at
+            : String(this.values[7]),
         scrape_run_id: Number(this.values[8]),
         live_refreshed_at: preserveLive
           ? existing!.live_refreshed_at

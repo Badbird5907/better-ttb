@@ -12,6 +12,7 @@ import {
   compareSectionsByTime,
   formatDay,
   isSectionFull,
+  meetingLocationLabel,
   millisofdayToHHMM,
   sortedMeetingTimes,
 } from "@better-ttb/shared";
@@ -664,7 +665,7 @@ function SectionRow({
               <div key={`${section.name}-${index}`}>
                 <span>{formatMeetingTime(meeting)}</span>
                 <span className="mx-1 text-muted-foreground">·</span>
-                <BuildingLocation meeting={meeting} />
+                <BuildingLocation meeting={meeting} section={section} />
               </div>
             ))}
           </div>
@@ -700,11 +701,16 @@ function SectionRow({
   );
 }
 
-function BuildingLocation({ meeting }: { meeting: MeetingTime }) {
+function BuildingLocation({
+  meeting,
+  section,
+}: {
+  meeting: MeetingTime;
+  section: Section;
+}) {
   const buildingCode = meeting.building.buildingCode;
-  const room = formatRoom(meeting);
   const building = buildingByCode.get(buildingCode);
-  const label = buildingCode ? `${buildingCode}${room}` : "TBA";
+  const label = meetingLocationLabel(meeting.building, section);
 
   return (
     <Tooltip>
@@ -712,7 +718,7 @@ function BuildingLocation({ meeting }: { meeting: MeetingTime }) {
         <span className="underline decoration-dotted underline-offset-2">{label}</span>
       </TooltipTrigger>
       <TooltipContent>
-        {building?.name ?? meeting.building.buildingName ?? buildingCode}
+        {building?.name ?? meeting.building.buildingName ?? label}
       </TooltipContent>
     </Tooltip>
   );
@@ -805,13 +811,6 @@ export function formatMeetingTime(meeting: MeetingTime): string {
   return `${formatDay(meeting.start.day)} ${millisofdayToHHMM(
     meeting.start.millisofday,
   )}-${millisofdayToHHMM(meeting.end.millisofday)}`;
-}
-
-export function formatRoom(meeting: MeetingTime): string {
-  const number = meeting.building.buildingRoomNumber;
-  const suffix = meeting.building.buildingRoomSuffix;
-
-  return `${number}${suffix}`.trim();
 }
 
 function SectionInstructors({ section }: { section: Section }) {

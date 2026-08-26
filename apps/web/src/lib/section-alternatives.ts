@@ -1,5 +1,9 @@
 import {
+  ONLINE_LOCATION_LABEL,
+  UNKNOWN_LOCATION_LABEL,
+  isOnlineOnlySection,
   isSectionWaitlisted,
+  meetingLocationLabel,
   sectionAllowedByLinkage,
   type Course,
   type DayNumber,
@@ -286,7 +290,11 @@ export function buildAlternativeDraftBlocks(
       teachMethod,
       sectionName:
         group.options.length === 1 ? firstOption.name : `${group.options.length} options`,
-      room: firstMeeting ? formatRoom(firstMeeting) : "TBA",
+      room: firstMeeting
+        ? meetingLocationLabel(firstMeeting.building, firstOption, " ")
+        : isOnlineOnlySection(firstOption)
+          ? ONLINE_LOCATION_LABEL
+          : UNKNOWN_LOCATION_LABEL,
       buildingCode: firstMeeting?.building.buildingCode.trim() ?? "",
       day: group.day,
       startMillis: group.startMillis,
@@ -323,15 +331,3 @@ function firstOptionName(group: SlotGroup): string {
   return group.options[0]?.name ?? "";
 }
 
-function formatRoom(meeting: Section["meetingTimes"][number]): string {
-  const code = meeting.building.buildingCode;
-  const number = meeting.building.buildingRoomNumber;
-  const suffix = meeting.building.buildingRoomSuffix;
-  const room = `${number}${suffix}`.trim();
-
-  if (!code && !room) {
-    return "TBA";
-  }
-
-  return `${code}${room ? ` ${room}` : ""}`.trim();
-}

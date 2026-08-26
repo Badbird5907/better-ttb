@@ -30,7 +30,14 @@ const REQUEST_DELAY_MS = 150;
 const RETRY_DELAYS_MS = [250, 1_000];
 const UPSTREAM_TIMEOUT_MS = 20_000;
 const CATALOG_DIVISION = "ARTSC";
-const SCHEDULED_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
+/**
+ * How long after a pass *starts* before the next one may begin. A pass walks
+ * the whole catalog in MAX_PAGES_PER_INVOCATION chunks, so this is the ceiling
+ * on how stale a published snapshot's enrolment counts can get.
+ */
+const SCHEDULED_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000;
+/** Window for the failed-run circuit breaker, independent of the pass cadence. */
+const FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const LEASE_MS = 2 * 60 * 1000;
 const MAX_CONSECUTIVE_FAILURES = 3;
 const MAX_FAILED_RUNS_PER_DAY = 2;
@@ -473,8 +480,12 @@ async function commitPage(
         WHEN courses.live_refreshed_at >= ? THEN courses.data_json
         ELSE excluded.data_json
       END,
+      -- updated_at drives the /api/catalog/updates delta feed, so it must only
+      -- move when the payload actually differs. Bumping it on every pass turned
+      -- the feed into a full re-download of the catalog.
       updated_at = CASE
         WHEN courses.live_refreshed_at >= ? THEN courses.updated_at
+        WHEN courses.data_json = excluded.data_json THEN courses.updated_at
         ELSE excluded.updated_at
       END,
       scrape_run_id = excluded.scrape_run_id,
@@ -631,7 +642,7 @@ async function automaticRestartsBlocked(
   sessions: string,
   now: Date,
 ): Promise<boolean> {
-  const cutoff = new Date(now.getTime() - SCHEDULED_REFRESH_INTERVAL_MS).toISOString();
+  const cutoff = new Date(now.getTime() - FAILURE_WINDOW_MS).toISOString();
   const row = await db
     .prepare(
       `SELECT COUNT(*) AS count FROM scrape_runs

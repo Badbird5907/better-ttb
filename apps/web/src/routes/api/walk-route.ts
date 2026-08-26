@@ -27,6 +27,26 @@ export function lookupBuildingRecord(code: string): BuildingRecord | null {
 }
 
 const OSRM_BASE = "https://routing.openstreetmap.de/routed-foot/route/v1/foot";
+const OSRM_USER_AGENT = "better-ttb/1.0 (+https://ttb.evanyu.dev)";
+
+export function osrmRouteUrl(
+  origin: BuildingRecord,
+  destination: BuildingRecord,
+): string {
+  return (
+    `${OSRM_BASE}/${origin.lng},${origin.lat};${destination.lng},${destination.lat}` +
+    `?overview=full&geometries=geojson&alternatives=false&steps=false`
+  );
+}
+
+/**
+ * Headers for the public OSRM instance, which answers 403 to any request
+ * without a User-Agent. Workers' `fetch()` sends none by default, so omitting
+ * this turns every uncached building pair into a straight-line fallback.
+ */
+export function osrmRequestHeaders(): Record<string, string> {
+  return { "User-Agent": OSRM_USER_AGENT, Accept: "application/json" };
+}
 
 export function walkRouteCacheKey(from: string, to: string): string {
   return `route:${BUILDING_DATA_VERSION}:${from.trim().toUpperCase()}:${to.trim().toUpperCase()}`;
@@ -58,14 +78,12 @@ export const Route = createFileRoute("/api/walk-route")({
           return new Response(cached, { headers });
         }
 
-        const osrmUrl =
-          `${OSRM_BASE}/${origin.lng},${origin.lat};${destination.lng},${destination.lat}` +
-          `?overview=full&geometries=geojson&alternatives=false&steps=false`;
-
         let route: WalkRoute;
 
         try {
-          const response = await fetch(osrmUrl);
+          const response = await fetch(osrmRouteUrl(origin, destination), {
+            headers: osrmRequestHeaders(),
+          });
 
           if (!response.ok) {
             return Response.json({ error: "routing_upstream_error" }, { status: 502 });
