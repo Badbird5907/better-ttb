@@ -158,6 +158,98 @@ describe("plan store actions", () => {
   });
 });
 
+describe("selection undo", () => {
+  const chosenLecture = (): string | null | undefined =>
+    usePlanStore.getState().plans[0]?.pinned[0]?.chosen.LEC;
+
+  beforeEach(() => {
+    usePlanStore.setState({ ...createInitialPlanState("plan-1"), history: {} });
+  });
+
+  it("steps a section switch back and forward", () => {
+    const { choose } = usePlanStore.getState();
+
+    choose("CSC207H1", "F", "LEC", "LEC0101");
+    choose("CSC207H1", "F", "LEC", "LEC0201");
+
+    expect(usePlanStore.getState().undo()).toBe(true);
+    expect(chosenLecture()).toBe("LEC0101");
+
+    expect(usePlanStore.getState().undo()).toBe(true);
+    expect(usePlanStore.getState().plans[0]?.pinned).toHaveLength(0);
+
+    expect(usePlanStore.getState().redo()).toBe(true);
+    expect(chosenLecture()).toBe("LEC0101");
+
+    expect(usePlanStore.getState().redo()).toBe(true);
+    expect(chosenLecture()).toBe("LEC0201");
+  });
+
+  it("reports an empty stack instead of changing the plan", () => {
+    const before = usePlanStore.getState().plans;
+
+    expect(usePlanStore.getState().undo()).toBe(false);
+    expect(usePlanStore.getState().redo()).toBe(false);
+    expect(usePlanStore.getState().plans).toBe(before);
+  });
+
+  it("skips changes that leave the selections identical", () => {
+    const { choose } = usePlanStore.getState();
+
+    choose("CSC207H1", "F", "LEC", "LEC0101");
+    choose("CSC207H1", "F", "LEC", "LEC0101");
+
+    expect(usePlanStore.getState().undo()).toBe(true);
+    expect(usePlanStore.getState().plans[0]?.pinned).toHaveLength(0);
+  });
+
+  it("drops the redo stack once a new change lands", () => {
+    const { choose } = usePlanStore.getState();
+
+    choose("CSC207H1", "F", "LEC", "LEC0101");
+    usePlanStore.getState().undo();
+    choose("CSC207H1", "F", "TUT", "TUT0101");
+
+    expect(usePlanStore.getState().redo()).toBe(false);
+  });
+
+  it("keeps history per plan and forgets it with the plan", () => {
+    const { choose, newPlan } = usePlanStore.getState();
+
+    choose("CSC207H1", "F", "LEC", "LEC0101");
+    newPlan();
+
+    // The fresh plan has nothing of its own to undo.
+    expect(usePlanStore.getState().undo()).toBe(false);
+
+    const [firstPlan, secondPlan] = usePlanStore.getState().plans;
+
+    usePlanStore.getState().deletePlan(secondPlan!.id);
+    usePlanStore.getState().setActivePlan(firstPlan!.id);
+
+    expect(usePlanStore.getState().history[secondPlan!.id]).toBeUndefined();
+    expect(usePlanStore.getState().undo()).toBe(true);
+    expect(usePlanStore.getState().plans[0]?.pinned).toHaveLength(0);
+  });
+
+  it("discards history when another tab writes the plans", () => {
+    const { choose } = usePlanStore.getState();
+
+    choose("CSC207H1", "F", "LEC", "LEC0101");
+    applyExternalPlanState(
+      JSON.stringify({
+        state: {
+          plans: [createPlan("Foreign", ["20269"])],
+          activePlanId: "foreign",
+        },
+        version: PLAN_STORAGE_VERSION,
+      }),
+    );
+
+    expect(usePlanStore.getState().history).toEqual({});
+  });
+});
+
 describe("cross-tab echo suppression", () => {
   afterEach(() => {
     vi.unstubAllGlobals();

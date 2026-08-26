@@ -1,4 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { formatForDisplay, useHotkeys } from "@tanstack/react-hotkeys";
 import { usePostHog } from "@posthog/react";
 import type {
   CandidateTimetable,
@@ -28,6 +29,7 @@ import {
   RotateCcw,
   Trash2,
   TriangleAlert,
+  Undo2,
   Upload,
   Wand2,
   X,
@@ -198,6 +200,8 @@ function TimetableRoute() {
   const pinCourse = usePlanStore((state) => state.pin);
   const unpinCourse = usePlanStore((state) => state.unpin);
   const resetAllChoices = usePlanStore((state) => state.resetAllChoices);
+  const undoSelections = usePlanStore((state) => state.undo);
+  const redoSelections = usePlanStore((state) => state.redo);
   const importPlan = usePlanStore((state) => state.importPlan);
   const updatePlanPrefs = usePlanStore((state) => state.updatePlanPrefs);
   const activePlan = React.useMemo(
@@ -262,6 +266,18 @@ function TimetableRoute() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [altTarget]);
+
+  // Mod maps to Cmd on macOS and Ctrl elsewhere. ignoreInputs keeps the plan
+  // out of it while the caret is in a text field, where Mod+Z means "undo my
+  // typing" (renaming a plan, editing a rule).
+  useHotkeys(
+    [
+      { hotkey: "Mod+Z", callback: () => undoSelectionChange() },
+      { hotkey: "Mod+Shift+Z", callback: () => redoSelectionChange() },
+      { hotkey: "Mod+Y", callback: () => redoSelectionChange() },
+    ],
+    { ignoreInputs: true },
+  );
 
   const coursesByKey = React.useMemo(() => {
     const map = new Map<string, Course>();
@@ -650,6 +666,38 @@ function TimetableRoute() {
       teachMethod: block.teachMethod,
       sectionName: block.sectionName,
     });
+  }
+
+  function undoSelectionChange() {
+    // A preview is not in the plan yet, so there is nothing in the history to
+    // step back to: undo simply drops it, which is what the grid shows.
+    if (previewCandidate) {
+      setPreviewCandidate(null);
+      return;
+    }
+
+    if (!undoSelections()) {
+      return;
+    }
+
+    closeSwitchUi();
+    posthog.capture("timetable_selection_undone");
+  }
+
+  function redoSelectionChange() {
+    if (!redoSelections()) {
+      return;
+    }
+
+    closeSwitchUi();
+    posthog.capture("timetable_selection_redone");
+  }
+
+  // The switch flow points at a section that undo/redo may have just replaced,
+  // so both close it rather than leaving stale draft blocks on the grid.
+  function closeSwitchUi() {
+    setAltTarget(null);
+    setSlotPicker(null);
   }
 
   function exportPlanJson() {
@@ -1797,6 +1845,7 @@ function SlotPickerDialog({
 
 function GridActionLegend() {
   const coarse = useCoarsePointer();
+  const undoHint = useUndoHint();
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-xs text-muted-foreground">
@@ -1809,8 +1858,35 @@ function GridActionLegend() {
         <Hand className="size-3.5" aria-hidden="true" />
         {coarse ? "Press & hold — switch section" : "Right-click — switch section"}
       </span>
+      {undoHint && (
+        <>
+          <span aria-hidden="true">·</span>
+          <span className="inline-flex items-center gap-1">
+            <Undo2 className="size-3.5" aria-hidden="true" />
+            {undoHint}
+          </span>
+        </>
+      )}
     </div>
   );
+}
+
+/**
+ * Labels for the undo/redo hotkeys, resolved after mount: formatForDisplay
+ * reads the platform, so rendering it during SSR would mismatch on hydration.
+ * Pointer-only devices have no modifier keys to press, hence the coarse skip.
+ */
+function useUndoHint(): string | null {
+  const coarse = useCoarsePointer();
+  const [hint, setHint] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setHint(
+      `${formatForDisplay("Mod+Z")} undo · ${formatForDisplay("Mod+Shift+Z")} redo`,
+    );
+  }, []);
+
+  return coarse ? null : hint;
 }
 
 function useCoarsePointer(): boolean {

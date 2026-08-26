@@ -47,6 +47,21 @@ export interface SectionSelection {
   sectionName: string | null;
 }
 
+/** Undo/redo stacks of `plan.pinned` snapshots for a single plan. */
+export interface PlanHistory {
+  past: PinnedCourse[][];
+  future: PinnedCourse[][];
+}
+
+interface PlanHistoryState {
+  /**
+   * Selection history keyed by plan id. Deliberately outside `partialize`:
+   * undo is a within-session affordance, and persisting stacks would let a
+   * stale snapshot from a previous visit overwrite the current plan.
+   */
+  history: Record<string, PlanHistory>;
+}
+
 interface PlanActions {
   setActivePlan: (planId: string) => void;
   setPlanSessions: (sessions: string[]) => void;
@@ -66,6 +81,10 @@ interface PlanActions {
     teachMethod: TeachMethod,
   ) => void;
   resetAllChoices: () => void;
+  /** Restores the active plan's previous selections. Returns false when the undo stack is empty. */
+  undo: () => boolean;
+  /** Re-applies the selections a matching undo took back. Returns false when the redo stack is empty. */
+  redo: () => boolean;
   renamePlan: (planId: string, name: string) => void;
   newPlan: (sessions?: string[]) => void;
   deletePlan: (planId: string) => void;
@@ -77,7 +96,10 @@ interface PlanActions {
   ) => void;
 }
 
-export type PlanStore = PersistedPlanState & PlanActions;
+export type PlanStore = PersistedPlanState & PlanHistoryState & PlanActions;
+
+/** How many selection changes per plan stay undoable. */
+const HISTORY_LIMIT = 50;
 
 // When true, persist writes are skipped. Set while applying state that came
 // from another tab's localStorage write: re-persisting an externally-sourced
@@ -105,6 +127,7 @@ export const usePlanStore = create<PlanStore>()(
   persist(
     (set, get) => ({
       ...createInitialPlanState(INITIAL_PLAN_ID),
+      history: {},
       setActivePlan: (planId) =>
         set((state) =>
           state.plans.some((plan) => plan.id === planId)
@@ -119,26 +142,26 @@ export const usePlanStore = create<PlanStore>()(
           })),
         })),
       pin: (courseCode, sectionCode) =>
-        set((state) => ({
-          plans: updatePlan(state.plans, state.activePlanId, (plan) =>
+        set((state) =>
+          recordSelectionChange(state, (plan) =>
             pinCourse(plan, courseCode, sectionCode),
           ),
-        })),
+        ),
       unpin: (courseCode, sectionCode) =>
-        set((state) => ({
-          plans: updatePlan(state.plans, state.activePlanId, (plan) =>
+        set((state) =>
+          recordSelectionChange(state, (plan) =>
             unpinCourse(plan, courseCode, sectionCode),
           ),
-        })),
+        ),
       choose: (courseCode, sectionCode, teachMethod, sectionName) =>
-        set((state) => ({
-          plans: updatePlan(state.plans, state.activePlanId, (plan) =>
+        set((state) =>
+          recordSelectionChange(state, (plan) =>
             chooseSection(plan, courseCode, sectionCode, teachMethod, sectionName),
           ),
-        })),
+        ),
       chooseMany: (selections) =>
-        set((state) => ({
-          plans: updatePlan(state.plans, state.activePlanId, (plan) =>
+        set((state) =>
+          recordSelectionChange(state, (plan) =>
             selections.reduce(
               (updated, selection) =>
                 selection.sectionName === null
@@ -158,17 +181,35 @@ export const usePlanStore = create<PlanStore>()(
               plan,
             ),
           ),
-        })),
+        ),
       clearChoice: (courseCode, sectionCode, teachMethod) =>
-        set((state) => ({
-          plans: updatePlan(state.plans, state.activePlanId, (plan) =>
+        set((state) =>
+          recordSelectionChange(state, (plan) =>
             clearSectionChoice(plan, courseCode, sectionCode, teachMethod),
           ),
-        })),
+        ),
       resetAllChoices: () =>
-        set((state) => ({
-          plans: updatePlan(state.plans, state.activePlanId, resetPlanChoices),
-        })),
+        set((state) => recordSelectionChange(state, resetPlanChoices)),
+      undo: () => {
+        const stepped = stepPlanHistory(get(), "undo");
+
+        if (!stepped) {
+          return false;
+        }
+
+        set(stepped);
+        return true;
+      },
+      redo: () => {
+        const stepped = stepPlanHistory(get(), "redo");
+
+        if (!stepped) {
+          return false;
+        }
+
+        set(stepped);
+        return true;
+      },
       renamePlan: (planId, name) =>
         set((state) => ({
           plans: updatePlan(state.plans, planId, (plan) => renamePlan(plan, name)),
@@ -183,7 +224,15 @@ export const usePlanStore = create<PlanStore>()(
           };
         }),
       deletePlan: (planId) =>
-        set((state) => deletePlanFromState(state, planId)),
+        set((state) => {
+          const next = deletePlanFromState(state, planId);
+
+          // Deleting the last remaining plan is refused, and that plan keeps
+          // its history.
+          return next.plans.some((plan) => plan.id === planId)
+            ? next
+            : { ...next, history: withoutPlanHistory(state.history, planId) };
+        }),
       duplicatePlan: (planId) =>
         set((state) => duplicatePlanInState(state, planId)),
       importPlan: (plan, name) => {
@@ -268,7 +317,9 @@ export function applyExternalPlanState(rawValue: string | null): void {
   // storage events in every other tab, causing tabs to fight over the key.
   suppressPersistWrite = true;
   try {
-    usePlanStore.setState({ plans: incoming.plans, activePlanId });
+    // Drop undo history: it holds snapshots of plans this tab last saw, so
+    // undoing after another tab's edit would silently discard that edit.
+    usePlanStore.setState({ plans: incoming.plans, activePlanId, history: {} });
   } finally {
     suppressPersistWrite = false;
   }
@@ -476,6 +527,105 @@ function updatePlan(
   updater: (plan: Plan) => Plan,
 ): Plan[] {
   return plans.map((plan) => (plan.id === planId ? updater(plan) : plan));
+}
+
+/**
+ * Applies a selection change to the active plan and pushes the selections it
+ * replaced onto that plan's undo stack. Changes that leave `pinned` identical
+ * (re-choosing the section that is already selected, pinning a pinned course)
+ * are dropped entirely, so undo never walks through steps that do nothing.
+ */
+function recordSelectionChange(
+  state: PlanStore,
+  updater: (plan: Plan) => Plan,
+): Partial<PlanStore> {
+  const plan = state.plans.find((entry) => entry.id === state.activePlanId);
+
+  if (!plan) {
+    return {};
+  }
+
+  const updated = updater(plan);
+
+  if (samePinned(plan.pinned, updated.pinned)) {
+    return {};
+  }
+
+  return {
+    plans: state.plans.map((entry) => (entry === plan ? updated : entry)),
+    history: pushPlanHistory(state.history, plan.id, plan.pinned),
+  };
+}
+
+function pushPlanHistory(
+  history: Record<string, PlanHistory>,
+  planId: string,
+  pinned: PinnedCourse[],
+): Record<string, PlanHistory> {
+  const past = [...(history[planId]?.past ?? []), pinned].slice(-HISTORY_LIMIT);
+
+  // A fresh change makes the redo stack unreachable, as in any other editor.
+  return { ...history, [planId]: { past, future: [] } };
+}
+
+function withoutPlanHistory(
+  history: Record<string, PlanHistory>,
+  planId: string,
+): Record<string, PlanHistory> {
+  const remaining = { ...history };
+
+  delete remaining[planId];
+  return remaining;
+}
+
+/**
+ * Moves the active plan one step along its undo/redo stacks. Returns null when
+ * that stack is empty so callers can tell "nothing to undo" from a real step.
+ */
+function stepPlanHistory(
+  state: PlanStore,
+  direction: "undo" | "redo",
+): Partial<PlanStore> | null {
+  const planId = state.activePlanId;
+  const entry = state.history[planId];
+  const plan = state.plans.find((candidate) => candidate.id === planId);
+
+  if (!entry || !plan) {
+    return null;
+  }
+
+  const source = direction === "undo" ? entry.past : entry.future;
+  const restored = source.at(-1);
+
+  if (!restored) {
+    return null;
+  }
+
+  const trimmed = source.slice(0, -1);
+  const grown = [
+    ...(direction === "undo" ? entry.future : entry.past),
+    plan.pinned,
+  ];
+
+  return {
+    plans: state.plans.map((candidate) =>
+      candidate === plan ? { ...plan, pinned: restored } : candidate,
+    ),
+    history: {
+      ...state.history,
+      [planId]:
+        direction === "undo"
+          ? { past: trimmed, future: grown }
+          : { past: grown, future: trimmed },
+    },
+  };
+}
+
+function samePinned(
+  left: readonly PinnedCourse[],
+  right: readonly PinnedCourse[],
+): boolean {
+  return left === right || JSON.stringify(left) === JSON.stringify(right);
 }
 
 function deletePlanFromState(
