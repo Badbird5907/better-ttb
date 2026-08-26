@@ -266,6 +266,16 @@ export const usePlanStore = create<PlanStore>()(
   ),
 );
 
+/** Whether the active plan has a selection change to step back to. */
+export function selectCanUndo(state: PlanStore): boolean {
+  return (state.history[state.activePlanId]?.past.length ?? 0) > 0;
+}
+
+/** Whether the active plan has an undone selection change to re-apply. */
+export function selectCanRedo(state: PlanStore): boolean {
+  return (state.history[state.activePlanId]?.future.length ?? 0) > 0;
+}
+
 /**
  * Applies a plan-store localStorage value written by another tab. Plan
  * contents sync across tabs, but the active plan stays per-tab so users can
