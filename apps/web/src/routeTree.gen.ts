@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TreeRouteImport } from './routes/tree'
 import { Route as TimetableRouteImport } from './routes/timetable'
 import { Route as MapRouteImport } from './routes/map'
+import { Route as DegreeRouteImport } from './routes/degree'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PIdRouteImport } from './routes/p.$id'
 import { Route as ApiWalkRouteRouteImport } from './routes/api/walk-route'
@@ -38,6 +39,11 @@ const TimetableRoute = TimetableRouteImport.update({
 const MapRoute = MapRouteImport.update({
   id: '/map',
   path: '/map',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DegreeRoute = DegreeRouteImport.update({
+  id: '/degree',
+  path: '/degree',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -103,6 +109,7 @@ const ApiAdminScrapeRoute = ApiAdminScrapeRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/degree': typeof DegreeRoute
   '/map': typeof MapRoute
   '/timetable': typeof TimetableRoute
   '/tree': typeof TreeRoute
@@ -120,6 +127,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/degree': typeof DegreeRoute
   '/map': typeof MapRoute
   '/timetable': typeof TimetableRoute
   '/tree': typeof TreeRoute
@@ -138,6 +146,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/degree': typeof DegreeRoute
   '/map': typeof MapRoute
   '/timetable': typeof TimetableRoute
   '/tree': typeof TreeRoute
@@ -157,6 +166,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/degree'
     | '/map'
     | '/timetable'
     | '/tree'
@@ -174,6 +184,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/degree'
     | '/map'
     | '/timetable'
     | '/tree'
@@ -191,6 +202,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/degree'
     | '/map'
     | '/timetable'
     | '/tree'
@@ -209,6 +221,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DegreeRoute: typeof DegreeRoute
   MapRoute: typeof MapRoute
   TimetableRoute: typeof TimetableRoute
   TreeRoute: typeof TreeRoute
@@ -244,6 +257,13 @@ declare module '@tanstack/react-router' {
       path: '/map'
       fullPath: '/map'
       preLoaderRoute: typeof MapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/degree': {
+      id: '/degree'
+      path: '/degree'
+      fullPath: '/degree'
+      preLoaderRoute: typeof DegreeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -359,6 +379,7 @@ const ApiShareRouteWithChildren = ApiShareRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DegreeRoute: DegreeRoute,
   MapRoute: MapRoute,
   TimetableRoute: TimetableRoute,
   TreeRoute: TreeRoute,

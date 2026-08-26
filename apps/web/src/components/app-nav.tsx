@@ -1,10 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { CalendarDays, Layers, MapIcon, Network } from "lucide-react";
+import { CalendarDays, Layers, ListChecks, MapIcon, Network } from "lucide-react";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-type NavPath = "/" | "/timetable" | "/map" | "/tree";
+type NavPath = "/" | "/timetable" | "/map" | "/tree" | "/degree";
 
 interface NavEntry {
   to: NavPath;
@@ -17,6 +17,7 @@ const NAV_ENTRIES: NavEntry[] = [
   { to: "/timetable", label: "Timetable", icon: CalendarDays },
   { to: "/map", label: "Map", icon: MapIcon },
   { to: "/tree", label: "Prereqs", icon: Network },
+  { to: "/degree", label: "Degree", icon: ListChecks },
 ];
 
 // Desktop pill nav. Markup/styles mirror the former per-route NavTab.
