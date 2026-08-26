@@ -42,6 +42,19 @@ export function formatDay(day: DayNumber): string {
   return DAY_LABELS[day];
 }
 
+/**
+ * Orders meeting times as they run through the week: earlier day first, then
+ * earlier start, then earlier end. TTB returns a section's meetings in whatever
+ * order its API happens to emit, so anything that displays them should sort.
+ */
+export function compareMeetingTimes(left: MeetingTime, right: MeetingTime): number {
+  return (
+    left.start.day - right.start.day ||
+    left.start.millisofday - right.start.millisofday ||
+    left.end.millisofday - right.end.millisofday
+  );
+}
+
 export function meetingTimesOverlap(left: MeetingTime, right: MeetingTime): boolean {
   return (
     left.start.day === right.start.day &&

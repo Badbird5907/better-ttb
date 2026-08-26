@@ -1,4 +1,9 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import {
+  formatForDisplay,
+  useHotkeys,
+  type RegisterableHotkey,
+} from "@tanstack/react-hotkeys";
 import { usePostHog } from "@posthog/react";
 import type {
   CandidateTimetable,
@@ -25,9 +30,11 @@ import {
   Hand,
   Layers,
   MousePointerClick,
+  Redo2,
   RotateCcw,
   Trash2,
   TriangleAlert,
+  Undo2,
   Upload,
   Wand2,
   X,
@@ -139,6 +146,8 @@ import { useCatalogStore } from "@/stores/catalog";
 import {
   activePlanFromState,
   createDefaultGeneratorPrefs,
+  selectCanRedo,
+  selectCanUndo,
   type GeneratorPrefs,
   type GeneratorSortKey,
   type Plan,
@@ -198,6 +207,10 @@ function TimetableRoute() {
   const pinCourse = usePlanStore((state) => state.pin);
   const unpinCourse = usePlanStore((state) => state.unpin);
   const resetAllChoices = usePlanStore((state) => state.resetAllChoices);
+  const undoSelections = usePlanStore((state) => state.undo);
+  const redoSelections = usePlanStore((state) => state.redo);
+  const hasUndoStep = usePlanStore(selectCanUndo);
+  const hasRedoStep = usePlanStore(selectCanRedo);
   const importPlan = usePlanStore((state) => state.importPlan);
   const updatePlanPrefs = usePlanStore((state) => state.updatePlanPrefs);
   const activePlan = React.useMemo(
@@ -262,6 +275,18 @@ function TimetableRoute() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [altTarget]);
+
+  // Mod maps to Cmd on macOS and Ctrl elsewhere. ignoreInputs keeps the plan
+  // out of it while the caret is in a text field, where Mod+Z means "undo my
+  // typing" (renaming a plan, editing a rule).
+  useHotkeys(
+    [
+      { hotkey: "Mod+Z", callback: () => undoSelectionChange() },
+      { hotkey: "Mod+Shift+Z", callback: () => redoSelectionChange() },
+      { hotkey: "Mod+Y", callback: () => redoSelectionChange() },
+    ],
+    { ignoreInputs: true },
+  );
 
   const coursesByKey = React.useMemo(() => {
     const map = new Map<string, Course>();
@@ -652,6 +677,41 @@ function TimetableRoute() {
     });
   }
 
+  function undoSelectionChange() {
+    // A preview is not in the plan yet, so there is nothing in the history to
+    // step back to: undo simply drops it, which is what the grid shows.
+    if (previewCandidate) {
+      setPreviewCandidate(null);
+      return;
+    }
+
+    if (!undoSelections()) {
+      return;
+    }
+
+    closeSwitchUi();
+    posthog.capture("timetable_selection_undone");
+  }
+
+  function redoSelectionChange() {
+    // A preview covers the grid with sections that are not in the plan, so a
+    // redo underneath it would be invisible and then be overwritten by Apply.
+    // Undo takes the preview back; redo waits until it is resolved.
+    if (previewCandidate || !redoSelections()) {
+      return;
+    }
+
+    closeSwitchUi();
+    posthog.capture("timetable_selection_redone");
+  }
+
+  // The switch flow points at a section that undo/redo may have just replaced,
+  // so both close it rather than leaving stale draft blocks on the grid.
+  function closeSwitchUi() {
+    setAltTarget(null);
+    setSlotPicker(null);
+  }
+
   function exportPlanJson() {
     posthog.capture("plan_exported_json", {
       pinned_course_count: activePlan.pinned.length,
@@ -802,6 +862,13 @@ function TimetableRoute() {
                       </Link>
                     </Button>
                   )}
+                  <UndoRedoButtons
+                    previewing={Boolean(previewCandidate)}
+                    canUndo={hasUndoStep}
+                    canRedo={hasRedoStep}
+                    onUndo={undoSelectionChange}
+                    onRedo={redoSelectionChange}
+                  />
                   <Tabs value={term} onValueChange={(value) => setTerm(value as Term)}>
                     <TabsList>
                       <TabsTrigger value="fall">
@@ -1795,8 +1862,74 @@ function SlotPickerDialog({
   );
 }
 
+/**
+ * Undo/redo controls for the grid. They carry the feature on touch devices,
+ * where the hotkeys are unreachable, and show the shortcut everywhere else.
+ */
+function UndoRedoButtons({
+  previewing,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+}: {
+  previewing: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+}) {
+  const undoShortcut = useHotkeyLabel("Mod+Z");
+  const redoShortcut = useHotkeyLabel("Mod+Shift+Z");
+  // While a preview is up, undo takes the preview back rather than stepping
+  // the plan's history, and redo stays out of the way until it is resolved.
+  const undoLabel = previewing ? "Discard preview" : "Undo section change";
+
+  return (
+    <div className="flex items-center">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            disabled={!previewing && !canUndo}
+            onClick={onUndo}
+          >
+            <Undo2 />
+            <span className="sr-only">{undoLabel}</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{withShortcut(undoLabel, undoShortcut)}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            disabled={previewing || !canRedo}
+            onClick={onRedo}
+          >
+            <Redo2 />
+            <span className="sr-only">Redo section change</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {withShortcut("Redo section change", redoShortcut)}
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
+function withShortcut(label: string, shortcut: string | null): string {
+  return shortcut ? `${label} · ${shortcut}` : label;
+}
+
 function GridActionLegend() {
   const coarse = useCoarsePointer();
+  const undoHint = useUndoHint();
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-xs text-muted-foreground">
@@ -1809,8 +1942,47 @@ function GridActionLegend() {
         <Hand className="size-3.5" aria-hidden="true" />
         {coarse ? "Press & hold — switch section" : "Right-click — switch section"}
       </span>
+      {undoHint && (
+        <>
+          <span aria-hidden="true">·</span>
+          <span className="inline-flex items-center gap-1">
+            <Undo2 className="size-3.5" aria-hidden="true" />
+            {undoHint}
+          </span>
+        </>
+      )}
     </div>
   );
+}
+
+/**
+ * The grid's undo/redo hint. Coarse pointers have no modifier keys to press
+ * and use the toolbar buttons instead.
+ */
+function useUndoHint(): string | null {
+  const coarse = useCoarsePointer();
+  const undoShortcut = useHotkeyLabel("Mod+Z");
+  const redoShortcut = useHotkeyLabel("Mod+Shift+Z");
+
+  if (coarse || !undoShortcut || !redoShortcut) {
+    return null;
+  }
+
+  return `${undoShortcut} undo · ${redoShortcut} redo`;
+}
+
+/**
+ * A hotkey's platform-specific label, resolved after mount: formatForDisplay
+ * reads the platform, so rendering it during SSR would mismatch on hydration.
+ */
+function useHotkeyLabel(hotkey: RegisterableHotkey): string | null {
+  const [label, setLabel] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setLabel(formatForDisplay(hotkey));
+  }, [hotkey]);
+
+  return label;
 }
 
 function useCoarsePointer(): boolean {
