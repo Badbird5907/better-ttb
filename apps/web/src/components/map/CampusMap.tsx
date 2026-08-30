@@ -39,9 +39,10 @@ const ST_GEORGE_CENTER: L.LatLngTuple = [43.6629, -79.3957];
 const DEFAULT_ZOOM = 15;
 const CARTO_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const CARTO_API_KEY = "cb1_2k0l_1_893309d99e1141c65f60012e";
 const CARTO_TILE_URLS = {
-  light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-  dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  light: `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+  dark: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
 } as const;
 
 /**
